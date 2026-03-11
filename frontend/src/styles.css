@@ -1,0 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Outfit:wght@100..900&display=swap');
+
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+@layer base {
+    body {
+        font-family: "Inter", sans-serif;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-family: "Outfit", sans-serif;
+    }
+}
+
+@layer utilities {
+    .text-gradient {
+        background-clip: text;
+        -webkit-background-clip: text;
+        color: transparent;
+        background-image: linear-gradient(to right, #2563eb, #6366f1, #2563eb);
+        background-size: 200% auto;
+        animation: gradient-x 15s ease infinite;
+    }
+
+    @keyframes gradient-x {
+
+        0%,
+        100% {
+            background-position: 0% 50%;
+        }
+
+        50% {
+            background-position: 100% 50%;
+        }
+    }
+
+    .animate-gradient-x {
+        animation: gradient-x 15s ease infinite;
+    }
+
+    .glass-sophisticated {
+        background-color: rgba(255, 255, 255, 0.6);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        box-shadow: 0 8px 32px 0 rgba(15, 23, 42, 0.05);
+    }
+
+    .dark .glass-sophisticated {
+        background-color: rgba(15, 23, 42, 0.4);
+        border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Cross-browser scrollbar hiding */
+    .no-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .no-scrollbar {
+        -ms-overflow-style: none;
+        /* IE and Edge */
+        scrollbar-width: none;
+        /* Firefox */
+    }
+}
+
+.material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.material-symbols-outlined.filled {
+    font-variation-settings: 'FILL' 1;
+}
+
+/* Hide default browser password toggle (Edge/IE) */
+input::-ms-clear {
+    display: none;
+}

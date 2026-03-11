@@ -1,0 +1,95 @@
+[
+  {
+    "_id": "6995c752780156b8fcc6210c",
+    "name": "Ahmedabad Junction",
+    "code": "ADI",
+    "region": "West",
+    "__v": 0,
+    "createdAt": "2026-02-18T14:06:10.765Z",
+    "updatedAt": "2026-02-18T14:06:10.765Z"
+  },
+  {
+    "_id": "6995c752780156b8fcc62140",
+    "trainNo": "12961",
+    "name": "Avantika Express",
+    "number": "12961",
+    "type": "Superfast",
+    "from": "Mumbai Central",
+    "to": "Indore Junction",
+    "from_code": "MMCT",
+    "to_code": "INDB",
+    "departureTime": "20:55",
+    "arrivalTime": "10:11",
+    "duration": "13h 16m",
+    "distance": 873,
+    "runsOn": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun"
+    ],
+    "classes": [
+      "SL",
+      "3A",
+      "2A",
+      "1A"
+    ],
+    "pantry": true,
+    "basePrice": 923,
+    "route": [
+      "MMCT",
+      "ST",
+      "BRC",
+      "UJN",
+      "INDB"
+    ],
+    "schedule": [
+      {
+        "station": "Mumbai Central",
+        "code": "MMCT",
+        "departure": "20:55",
+        "arrival": "20:55",
+        "distanceFromStart": 0,
+        "_id": "6995c752780156b8fcc62141"
+      },
+      {
+        "station": "Surat",
+        "code": "ST",
+        "departure": "00:55",
+        "arrival": "00:45",
+        "distanceFromStart": 263,
+        "_id": "6995c752780156b8fcc62142"
+      },
+      {
+        "station": "Vadodara Junction",
+        "code": "BRC",
+        "departure": "03:01",
+        "arrival": "02:51",
+        "distanceFromStart": 393,
+        "_id": "6995c752780156b8fcc62143"
+      },
+      {
+        "station": "Ujjain Junction",
+        "code": "UJN",
+        "departure": "08:58",
+        "arrival": "08:48",
+        "distanceFromStart": 793,
+        "_id": "6995c752780156b8fcc62144"
+      },
+      {
+        "station": "Indore Junction",
+        "code": "INDB",
+        "departure": "10:11",
+        "arrival": "10:11",
+        "distanceFromStart": 873,
+        "_id": "6995c752780156b8fcc62145"
+      }
+    ],
+    "__v": 0,
+    "createdAt": "2026-02-18T14:06:11.259Z",
+    "updatedAt": "2026-02-18T14:06:11.259Z"
+  }
+]

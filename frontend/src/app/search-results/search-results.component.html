@@ -1,0 +1,449 @@
+<div class="min-h-screen bg-slate-50 font-sans text-slate-800 overflow-x-hidden">
+
+    <!-- Header -->
+    <header class="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                <!-- Reduced gap-4 to gap-3 -->
+                <!-- Route Badge -->
+                <div class="flex items-center gap-3 group cursor-default"> <!-- Reduced gap-5 to gap-4 -->
+                    <div
+                        class="bg-gradient-to-br from-indigo-600 to-violet-600 w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30 transition-transform group-hover:scale-105 group-hover:rotate-3">
+                        <!-- Reduced w-14 h-14 to w-12 h-12 -->
+                        <span class="material-symbols-outlined text-white text-xl">train</span>
+                        <!-- Reduced text-3xl to text-2xl -->
+                    </div>
+
+                    <div>
+                        <div class="flex items-center gap-2 text-xl font-bold text-slate-900 tracking-tight">
+                            <span>{{ fromStation }}</span>
+                            <span
+                                class="material-symbols-outlined text-slate-400 font-bold text-base">arrow_forward</span>
+                            <span>{{ toStation }}</span>
+                        </div>
+                        <div class="flex items-center gap-2 text-xs font-medium text-slate-500 mt-0.5">
+                            <!-- Reduced text-sm to text-xs, mt-1 to mt-0.5 -->
+                            <span
+                                class="flex items-center gap-1 bg-white/50 px-2 py-0.5 rounded-md border border-white/50">
+                                <span class="material-symbols-outlined text-sm text-indigo-500">calendar_today</span>
+                                {{ travelDate | date:'d MMM, y' }}
+                            </span>
+                            <button (click)="toggleModifySearch()"
+                                class="text-indigo-600 hover:text-indigo-800 font-bold text-[10px] uppercase tracking-wider hover:underline transition-all">
+                                {{ showModifySearch ? 'Hide Search' : 'Modify Search' }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Sort Actions -->
+                <div class="flex items-center p-1 bg-slate-200/50 backdrop-blur-sm rounded-xl border border-white/50">
+                    <button *ngFor="let option of ['earliest', 'price_low', 'duration']"
+                        (click)="sortBy = option; sortTrains()" [ngClass]="sortBy === option 
+                            ? 'bg-white shadow-sm text-indigo-700 font-bold' 
+                            : 'text-slate-500 hover:text-slate-700 hover:bg-white/50 font-medium'"
+                        class="px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wide transition-all duration-200">
+                        <!-- Reduced padding and text size -->
+                        {{ option === 'earliest' ? 'Departure' : option === 'price_low' ? 'Cheapest' : 'Fastest' }}
+                    </button>
+                </div>
+            </div>
+
+            <!-- Modify Search Overlay -->
+            <div *ngIf="showModifySearch"
+                class="mt-6 p-6 bg-white rounded-2xl border border-slate-200 shadow-xl animate-fade-in-up relative z-50">
+                <form (ngSubmit)="updateSearch()"
+                    class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr_1fr_auto] gap-6 items-end relative z-10">
+                    <!-- Reduced gap-6 to gap-4 -->
+
+                    <!-- From Input -->
+                    <div class="space-y-1.5 group relative z-10 focus-within:z-50">
+                        <label class="block text-[9px] font-bold text-slate-500 uppercase tracking-widest ml-1">From
+                            Station</label>
+                        <div
+                            class="relative bg-white/60 backdrop-blur-sm rounded-xl px-3 py-2.5 border border-slate-200/60 focus-within:border-indigo-500 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all shadow-sm hover:shadow-md">
+                            <span
+                                class="absolute left-3 top-2.5 material-symbols-outlined text-slate-400 group-focus-within:text-indigo-500 transition-colors text-xl">train</span>
+                            <input [(ngModel)]="tempFromStation" name="tempFromStation" (input)="filterStations('from')"
+                                class="w-full pl-9 bg-transparent border-none p-0 text-slate-800 focus:outline-none font-bold placeholder-slate-400 focus:ring-0 text-sm"
+                                placeholder="Origin Station">
+
+                            <!-- Suggestions Dropdown -->
+                            <ul *ngIf="showFromSuggestions && filteredFromStations.length > 0"
+                                class="absolute top-full left-0 w-full bg-white/95 backdrop-blur-xl rounded-xl shadow-2xl mt-1 max-h-52 overflow-y-auto z-[100] border border-slate-100 py-1 custom-scrollbar">
+                                <li *ngFor="let s of filteredFromStations" (click)="selectStation(s, 'from')"
+                                    class="px-3 py-2 hover:bg-indigo-50 cursor-pointer text-xs font-bold text-slate-700 flex items-center gap-2 transition-colors">
+                                    <span class="material-symbols-outlined text-slate-400 text-xs">train</span> {{ s }}
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Swap Button -->
+                    <button type="button" (click)="swapStations()"
+                        class="w-10 h-10 rounded-xl bg-slate-100/80 text-slate-500 hover:bg-indigo-600 hover:text-white transition-all mb-0.5 flex items-center justify-center transform hover:rotate-180 duration-500 shadow-sm hover:shadow-indigo-500/30 relative z-10">
+                        <!-- Reduced size -->
+                        <span class="material-symbols-outlined text-lg">sync_alt</span>
+                    </button>
+
+                    <!-- To Input -->
+                    <div class="space-y-1.5 group relative z-10 focus-within:z-40">
+                        <label class="block text-[9px] font-bold text-slate-500 uppercase tracking-widest ml-1">To
+                            Station</label>
+                        <div
+                            class="relative bg-white/60 backdrop-blur-sm rounded-xl px-3 py-2.5 border border-slate-200/60 focus-within:border-indigo-500 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all shadow-sm hover:shadow-md">
+                            <span
+                                class="absolute left-3 top-2.5 material-symbols-outlined text-slate-400 group-focus-within:text-indigo-500 transition-colors text-xl">location_on</span>
+                            <input [(ngModel)]="tempToStation" name="tempToStation" (input)="filterStations('to')"
+                                title="Destination Station"
+                                class="w-full pl-9 bg-transparent border-none p-0 text-slate-800 focus:outline-none font-bold placeholder-slate-400 focus:ring-0 text-sm"
+                                placeholder="Destination Station">
+                            <!-- Suggestions Dropdown -->
+                            <ul *ngIf="showToSuggestions && filteredToStations.length > 0"
+                                class="absolute top-full left-0 w-full bg-white/95 backdrop-blur-xl rounded-xl shadow-2xl mt-1 max-h-52 overflow-y-auto z-[100] border border-slate-100 py-1 custom-scrollbar">
+                                <li *ngFor="let s of filteredToStations" (click)="selectStation(s, 'to')"
+                                    class="px-3 py-2 hover:bg-indigo-50 cursor-pointer text-xs font-bold text-slate-700 flex items-center gap-2 transition-colors">
+                                    <span class="material-symbols-outlined text-slate-400 text-xs">train</span> {{ s }}
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Date Input -->
+                    <div class="space-y-1.5 group relative z-10">
+                        <label
+                            class="block text-[9px] font-bold text-slate-500 uppercase tracking-widest ml-1">Date</label>
+                        <div
+                            class="bg-white/60 backdrop-blur-sm rounded-xl px-3 py-2.5 border border-slate-200/60 focus-within:border-indigo-500 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all shadow-sm hover:shadow-md flex items-center">
+                            <input [(ngModel)]="tempTravelDate" name="tempTravelDate" [min]="minDate" type="date"
+                                title="Travel Date"
+                                class="w-full bg-transparent border-none p-0 text-slate-800 focus:outline-none font-bold focus:ring-0 text-sm">
+                        </div>
+                    </div>
+
+                    <!-- Search Button -->
+                    <button type="submit"
+                        class="bg-slate-900 hover:bg-indigo-600 text-white font-bold px-6 py-2.5 rounded-xl transition-all text-xs tracking-widest uppercase h-[46px] shadow-lg shadow-slate-900/20 hover:shadow-indigo-500/40 transform hover:-translate-y-1 active:scale-95 flex items-center justify-center gap-2 relative z-10">
+                        <span class="material-symbols-outlined text-lg">search</span> Search
+                    </button>
+
+                    <!-- Separate Search Logic from Sidebar -->
+                    <aside class="hidden"></aside>
+                </form>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 mt-6 relative z-10 pb-20">
+        <div class="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 items-start">
+
+            <!-- Sidebar -->
+            <aside
+                class="hidden lg:block sticky top-24 max-h-[calc(100vh-6rem)] h-fit rounded-xl bg-white border border-slate-200 shadow-lg overflow-hidden flex flex-col">
+                <!-- Sidebar Header -->
+                <div class="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <h2 class="font-bold text-slate-900 text-base flex items-center gap-2">
+                        <span class="material-symbols-outlined text-indigo-600 text-xl">tune</span> Filters
+                    </h2>
+                    <button (click)="resetFilters()"
+                        class="text-[9px] font-bold text-slate-500 hover:text-indigo-600 uppercase tracking-wider bg-white/50 hover:bg-white px-2.5 py-1 rounded-full transition-all border border-transparent hover:border-indigo-100 shadow-sm">
+                        Reset All
+                    </button>
+                </div>
+
+                <!-- Scrollable Content -->
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-8">
+                    <!-- Increased padding and spacing -->
+                    <!-- Availability Filter -->
+                    <div>
+                        <h3
+                            class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <span class="material-symbols-outlined text-sm">confirmation_number</span> Availability
+                        </h3>
+                        <label
+                            class="flex items-center justify-between p-3 rounded-xl border border-white/40 bg-white/40 cursor-pointer hover:bg-white/60 transition-all group shadow-sm">
+                            <span
+                                class="text-[10px] font-bold text-slate-600 group-hover:text-indigo-600 transition-colors">Show
+                                Available Only</span>
+                            <div class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" [(ngModel)]="showAvailableOnly" (change)="filterTrains()"
+                                    class="sr-only peer">
+                                <div
+                                    class="w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600">
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+
+
+
+                    <!-- Departure Time -->
+                    <div>
+                        <h3
+                            class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <span class="material-symbols-outlined text-sm">schedule</span> Departure
+                        </h3>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button *ngFor="let time of departureTimes"
+                                (click)="toggleFilter('departureTime', time.value)"
+                                [ngClass]="selectedDepartureTimes.includes(time.value)
+                                    ? 'bg-slate-800 text-white shadow-lg shadow-slate-800/30 ring-2 ring-slate-800 ring-offset-2 ring-offset-indigo-50'
+                                    : 'bg-white/40 text-slate-600 hover:bg-white/80 hover:text-indigo-600 border border-white/40 message-hover shadow-sm'"
+                                class="rounded-lg p-2.5 flex flex-col items-center gap-1.5 transition-all duration-200">
+                                <span class="material-symbols-outlined text-xl mb-0.5">{{ time.icon }}</span>
+                                <span class="text-[9px] font-bold uppercase tracking-wider">{{ time.label }}</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Classes -->
+                    <div>
+                        <h3
+                            class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <span class="material-symbols-outlined text-sm">airline_seat_recline_extra</span> Class
+                        </h3>
+                        <div class="flex flex-wrap gap-1.5">
+                            <button *ngFor="let cls of filterClasses" (click)="toggleFilter('class', cls)"
+                                [ngClass]="selectedClasses.includes(cls) 
+                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105' 
+                                    : 'bg-white/40 text-slate-600 border-white/40 hover:bg-white hover:text-indigo-600'"
+                                class="px-2.5 py-1.5 rounded-md text-[9px] font-bold tracking-wide transition-all border shadow-sm duration-200">
+                                {{ cls }}
+                            </button>
+                        </div>
+                    </div>
+
+
+                </div>
+            </aside>
+
+            <!-- Results Section -->
+            <div class="space-y-4">
+                <!-- Loader -->
+                <div *ngIf="loading()"
+                    class="h-80 flex flex-col items-center justify-center animate-fade-in bg-white/30 backdrop-blur-md rounded-3xl border border-white/50">
+                    <div class="relative">
+                        <div class="w-16 h-16 border-4 border-indigo-100 rounded-full"></div>
+                        <div
+                            class="absolute inset-0 w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin">
+                        </div>
+                        <div class="absolute inset-0 flex items-center justify-center">
+                            <span class="material-symbols-outlined text-indigo-600 text-2xl animate-pulse">train</span>
+                        </div>
+                    </div>
+                    <p class="text-xs font-bold text-slate-500 mt-5 uppercase tracking-widest animate-pulse">Finding
+                        best routes...</p>
+                </div>
+
+                <div *ngFor="let train of displayedTrains()"
+                    class="bg-white rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] mb-5 overflow-hidden border border-slate-50">
+
+                    <div class="p-6">
+                        <!-- Card Header -->
+                        <div class="flex justify-between items-start mb-6">
+                            <div class="flex items-center gap-4">
+                                <!-- Icon -->
+                                <div
+                                    class="w-[52px] h-[52px] bg-[#8B5CF6] text-white rounded-[16px] flex items-center justify-center shadow-lg shadow-purple-500/20 shrink-0">
+                                    <span class="material-symbols-outlined text-[24px]">train</span>
+                                </div>
+                                <!-- Train Info -->
+                                <div class="train-card-header flex-1 min-w-0">
+                                    <h3
+                                        class="text-[18px] font-bold text-slate-900 flex items-center leading-tight mb-2 tracking-tight">
+                                        <span class="line-clamp-2 md:line-clamp-3 leading-snug">{{ train.name }}</span>
+                                    </h3>
+
+                                    <div class="flex flex-wrap items-center gap-2 mt-0.5">
+                                        <span
+                                            class="bg-indigo-50 text-indigo-600 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider max-w-full truncate relative overflow-hidden shrink-0">
+                                            #{{ train.number }}
+                                        </span>
+                                        <span class="w-1 h-1 bg-slate-200 rounded-full shrink-0"></span>
+                                        <span
+                                            class="bg-indigo-50 text-indigo-600 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shrink-0">
+                                            {{ train.type || 'EXPRESS' }}
+                                        </span>
+                                        <span *ngIf="train.via"
+                                            class="bg-white text-slate-500 border border-slate-200 text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shrink-0">
+                                            VIA {{ train.via }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="text-right">
+                                <p class="text-[9px] font-bold text-slate-300 uppercase tracking-widest mb-0.5">
+                                    STARTS FROM
+                                </p>
+                                <p
+                                    class="text-[26px] font-black text-slate-900 tracking-tight flex items-start justify-end leading-none">
+                                    <span class="text-[14px] text-slate-400 font-bold mt-1.5 mr-0.5">₹</span>{{
+                                    train.price | number }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Journey Timeline -->
+                        <div
+                            class="rounded-[24px] px-6 py-5 border border-slate-100/80 flex items-center justify-between relative mb-6">
+
+                            <!-- Origin -->
+                            <div class="text-left w-24">
+                                <p class="text-[28px] font-black text-slate-900 tracking-tight leading-none mb-1">
+                                    {{ train.departure }}
+                                </p>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">
+                                    {{ fromStation | uppercase }}
+                                </p>
+                            </div>
+
+                            <!-- Duration Line -->
+                            <div class="flex-1 flex flex-col items-center px-4 relative -mt-3">
+                                <!-- Duration Pill -->
+                                <span
+                                    class="bg-white border border-indigo-100 text-indigo-600 text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-1 mb-2 shrink-0 relative z-10">
+                                    <span class="material-symbols-outlined text-[12px]">schedule</span> {{
+                                    train.duration }}
+                                </span>
+
+                                <!-- Solid Line -->
+                                <div class="w-full h-[2px] bg-[#A78BFA] rounded-full"></div>
+
+                                <!-- Stops Label -->
+                                <div class="flex flex-col items-center mt-1.5 gap-0.5">
+                                    <span
+                                        class="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center">
+                                        {{ train.isDirect ? train.stops : '1 CHANGE (VIA ' + train.via + ')' }}
+                                    </span>
+                                    <span *ngIf="!train.isDirect"
+                                        class="text-[8px] font-bold text-slate-400/80 uppercase tracking-widest text-center px-2">
+                                        {{ train.displayTitle }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Destination -->
+                            <div class="text-right w-24">
+                                <p class="text-[28px] font-black text-slate-900 tracking-tight leading-none mb-1">
+                                    {{ train.arrival }}
+                                </p>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">
+                                    {{ toStation | uppercase }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Footer / Actions -->
+                        <div class="flex flex-col xl:flex-row items-end justify-between gap-4">
+                            <!-- Class Selection -->
+                            <div class="flex gap-3 overflow-x-auto w-full xl:w-auto scrollbar-hidden pb-2 xl:pb-0">
+                                <div *ngFor="let cls of train.classes" (click)="selectClass(train, cls)" [ngClass]="train.selectedClass === cls.type 
+                                        ? 'bg-[#0B1120] text-white shadow-lg ring-1 ring-slate-800' 
+                                        : 'bg-white border border-slate-100 text-slate-800 hover:border-slate-200'"
+                                    class="min-w-[90px] pt-3 pb-2.5 px-3 rounded-[18px] cursor-pointer flex flex-col items-center justify-center shrink-0 transition-colors">
+
+                                    <span class="text-[10px] font-bold uppercase tracking-widest opacity-90 mb-0.5">
+                                        {{ cls.name || cls.type }}
+                                    </span>
+                                    <span class="text-[18px] font-black tracking-tight mb-1.5"
+                                        [ngClass]="train.selectedClass === cls.type ? 'text-white' : 'text-slate-900'">
+                                        ₹{{ cls.price | number }}
+                                    </span>
+
+                                    <!-- Status Pill -->
+                                    <span
+                                        *ngIf="cls.availability.text.includes('AVAILABLE') || cls.availability.text.includes('AVL')"
+                                        [ngClass]="train.selectedClass === cls.type ? 'bg-green-500/20 text-green-400' : 'bg-green-50/80 text-green-600'"
+                                        class="text-[8px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                        {{ cls.availability.text }}
+                                    </span>
+                                    <span *ngIf="cls.availability.text.includes('WL')"
+                                        [ngClass]="train.selectedClass === cls.type ? 'bg-red-500/20 text-red-400' : 'bg-red-50 text-red-600'"
+                                        class="text-[8px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                        {{ cls.availability.text }}
+                                    </span>
+                                    <span *ngIf="cls.availability.text.includes('REGRET')"
+                                        [ngClass]="train.selectedClass === cls.type ? 'bg-pink-500/20 text-pink-400' : 'bg-pink-50 text-pink-600'"
+                                        class="text-[8px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                        {{ cls.availability.text }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="flex items-center gap-3 shrink-0 mt-3 xl:mt-0">
+                                <button (click)="openRoute(train)" title="View Route"
+                                    class="w-[42px] h-[42px] rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-[#7C3AED] hover:border-purple-200 transition-colors">
+                                    <span class="material-symbols-outlined text-[20px]">swap_calls</span>
+                                </button>
+                                <button (click)="bookTicket(train)" [disabled]="!isBookingAllowed(train)"
+                                    class="h-[42px] px-6 bg-[#8B5CF6] hover:bg-purple-600 disabled:bg-purple-300 disabled:cursor-not-allowed text-white rounded-xl text-[12px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 transition-colors">
+                                    BOOK NOW <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Modal for Schedule (Reused Logic, New UI) -->
+    <div *ngIf="showRouteModal"
+        class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-fade-in">
+        <div
+            class="bg-white/90 backdrop-blur-xl rounded-[2rem] shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden animate-scale-up border border-white/50">
+            <div class="p-6 border-b border-slate-100/50 flex justify-between items-center bg-white/50">
+                <div>
+                    <h3 class="text-xl font-black text-slate-800">{{ selectedTrainForRoute?.name }}</h3>
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">Full Train Route</p>
+                </div>
+                <button (click)="closeRoute()"
+                    class="w-10 h-10 rounded-full bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-500 transition-all flex items-center justify-center">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="flex-1 overflow-hidden flex flex-col">
+                <!-- Table Header -->
+                <div
+                    class="grid grid-cols-[2fr_1.2fr_1.2fr_0.8fr] gap-4 px-6 py-4 bg-slate-50 border-y border-slate-100 sticky top-0 z-20">
+                    <span class="text-[11px] font-black text-slate-500 uppercase tracking-widest">Station Name</span>
+                    <span class="text-[11px] font-black text-slate-500 uppercase tracking-widest text-center">Arrival
+                        Time</span>
+                    <span class="text-[11px] font-black text-slate-500 uppercase tracking-widest text-center">Departure
+                        Time</span>
+                    <span class="text-[11px] font-black text-slate-500 uppercase tracking-widest text-right">Day</span>
+                </div>
+
+                <!-- Table Body -->
+                <div class="flex-1 overflow-y-auto custom-scrollbar min-h-[350px]">
+                    <div *ngFor="let stop of selectedTrainForRoute?.schedule; let i = index; let even = even"
+                        [ngClass]="even ? 'bg-white' : 'bg-slate-50/50'"
+                        class="grid grid-cols-[2fr_1.2fr_1.2fr_0.8fr] gap-4 px-6 py-4 items-center group/row hover:bg-indigo-50/30 transition-colors">
+
+                        <div class="flex flex-col">
+                            <span class="text-xs font-black text-slate-800">{{ stop.station }}</span>
+                            <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{{ stop.code
+                                }}</span>
+                        </div>
+
+                        <div class="text-center">
+                            <span class="text-xs font-bold text-slate-600">{{ stop.arrival || '--:--' }}</span>
+                        </div>
+
+                        <div class="text-center">
+                            <span class="text-xs font-bold text-slate-600">{{ stop.departure || '--:--' }}</span>
+                        </div>
+
+                        <div class="text-right">
+                            <span class="text-[10px] font-black text-slate-400">{{
+                                getStopDay(selectedTrainForRoute.schedule, i) }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
