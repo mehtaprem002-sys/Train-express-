@@ -89,15 +89,22 @@ import { SeatSelectionComponent } from './seat-selection/seat-selection.componen
                         class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden transition-all hover:shadow-md">
                         
                         <!-- Header -->
-                        <div class="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
+                        <div class="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                             <div class="flex items-center gap-3">
                                 <span class="material-symbols-outlined text-slate-400">person</span>
                                 <h3 class="font-bold text-slate-900 dark:text-white">Passenger {{ i + 1 }}</h3>
                                 <span *ngIf="i === 0" class="bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide">Primary</span>
                             </div>
-                            <button *ngIf="passengers.length > 1" (click)="removePassenger(i)" type="button" class="text-slate-400 hover:text-red-500 transition-colors">
-                                <span class="material-symbols-outlined">delete</span>
-                            </button>
+                            <div class="flex items-center gap-3 w-full sm:w-auto mt-2 sm:mt-0">
+                                <button *ngIf="savedTravelers && savedTravelers.length > 0" type="button" (click)="fillSavedTraveler(i)"
+                                    class="text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 rounded-lg px-3 py-1.5 flex items-center gap-1 transition-colors outline-none">
+                                    <span class="material-symbols-outlined text-sm">how_to_reg</span>
+                                    Auto-fill Saved Traveler
+                                </button>
+                                <button *ngIf="passengers.length > 1" (click)="removePassenger(i)" type="button" class="text-slate-400 hover:text-red-500 transition-colors ml-auto">
+                                    <span class="material-symbols-outlined">delete</span>
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Body -->
@@ -219,7 +226,7 @@ import { SeatSelectionComponent } from './seat-selection/seat-selection.componen
                             </div>
                              <div class="flex justify-between text-slate-600 dark:text-slate-400">
                                 <span>Tax & Fees</span>
-                                <span class="font-medium text-slate-900 dark:text-white">₹11.80</span>
+                                <span class="font-medium text-slate-900 dark:text-white">₹11</span>
                             </div>
                             <div class="flex justify-between text-green-600 font-bold" *ngIf="false">
                                 <span>Seat Selection</span>
@@ -358,6 +365,22 @@ export class BookingComponent implements OnInit {
         return this.authService.currentUser();
     }
 
+    get savedTravelers() {
+        return this.currentUser?.savedTravelers || [];
+    }
+
+    fillSavedTraveler(index: number) {
+        if (!this.savedTravelers || this.savedTravelers.length === 0) return;
+        const travelerToUse = this.savedTravelers[index] || this.savedTravelers[0];
+        if (travelerToUse) {
+            this.passengers.at(index).patchValue({
+                name: travelerToUse.name,
+                age: travelerToUse.age,
+                gender: travelerToUse.gender
+            });
+        }
+    }
+
     get baseFare() {
         if (!this.selectedClass) return 0;
         let total = 0;
@@ -374,7 +397,7 @@ export class BookingComponent implements OnInit {
     }
 
     get totalAmount() {
-        const tax = 11.80; // Fixed fee
+        const tax = 11; // Fixed fee
         return this.baseFare + tax;
     }
 

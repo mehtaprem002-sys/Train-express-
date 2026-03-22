@@ -69,7 +69,12 @@ export class AuthService {
     }
 
     updateProfile(userId: string, data: any) {
-        return this.http.put(`${this.apiUrl}/users/${userId}`, data).pipe(
+        let headers: any = {};
+        if (typeof localStorage !== 'undefined') {
+            const token = localStorage.getItem('token');
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+        }
+        return this.http.put(`${this.apiUrl}/users/${userId}`, data, { headers }).pipe(
             tap((response: any) => {
                 // Update local state
                 this.currentUser.set(response.user);

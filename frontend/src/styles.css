@@ -80,6 +80,7 @@
 }
 
 /* Hide default browser password toggle (Edge/IE) */
+input::-ms-reveal,
 input::-ms-clear {
     display: none;
 }

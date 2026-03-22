@@ -462,7 +462,7 @@ export class PaymentComponent implements OnInit, OnDestroy {
             else base += pricePerTicket;
         });
         this.totalBaseFare = base;
-        this.gst = 11.80;
+        this.gst = 11;
         this.finalAmount = this.totalBaseFare + this.gst;
     }
 

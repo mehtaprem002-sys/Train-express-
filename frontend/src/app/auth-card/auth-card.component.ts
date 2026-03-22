@@ -1211,7 +1211,6 @@ export class AuthCardComponent implements OnInit {
       password: this.signupPassword
     }).subscribe({
       next: () => {
-        alert('Registration successful! Please login.');
         this.switchToLogin(); // Flip back to login
       },
       error: (err) => {

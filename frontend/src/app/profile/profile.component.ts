@@ -30,8 +30,6 @@ import { NotificationService } from '../shared/notification.service';
                     </div>
                 </div>
                 <h2 class="text-xl font-bold text-slate-900">{{ authService.currentUser()?.name }}</h2>
-                <div class="mt-2 px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold uppercase tracking-wider rounded-full">Gold Member</div>
-                <p class="text-slate-500 text-xs mt-3">Member since Oct 2021</p>
             </div>
 
             <!-- Navigation Menu -->
@@ -94,10 +92,6 @@ import { NotificationService } from '../shared/notification.service';
                             <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Gender</p>
                             <p class="text-base font-bold text-slate-800">{{ authService.currentUser()?.gender || 'Not Specified' }}</p>
                         </div>
-                         <div>
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Member Status</p>
-                            <p class="text-base font-bold text-slate-800">Gold Tier</p>
-                        </div>
                     </div>
                 </div>
 
@@ -120,8 +114,11 @@ import { NotificationService } from '../shared/notification.service';
                  <form (ngSubmit)="saveProfile()" class="space-y-6 max-w-2xl">
                      
                      <!-- Messages -->
-                    <div *ngIf="successMessage" class="p-4 bg-green-50 border border-green-100 text-green-700 rounded-xl text-sm font-bold flex items-center gap-2">
+                    <div *ngIf="successMessage" class="p-4 bg-green-50 border border-green-100 text-green-700 rounded-xl text-sm font-bold flex items-center gap-2 mb-4">
                         <span class="material-symbols-outlined text-lg">check_circle</span> {{ successMessage }}
+                    </div>
+                    <div *ngIf="errorMessage" class="p-4 bg-red-50 border border-red-100 text-red-700 rounded-xl text-sm font-bold flex items-center gap-2 mb-4">
+                        <span class="material-symbols-outlined text-lg">error</span> {{ errorMessage }}
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -191,12 +188,12 @@ import { NotificationService } from '../shared/notification.service';
                           
                           <div class="bg-slate-50 rounded-2xl p-6 border border-slate-100">
                                 <div class="flex gap-4 mb-4">
-                                    <input type="text" [(ngModel)]="newTraveler.name" placeholder="Traveler Name" class="flex-grow px-4 py-2 rounded-xl border border-slate-200 text-sm">
-                                    <input type="number" [(ngModel)]="newTraveler.age" placeholder="Age" class="w-24 px-4 py-2 rounded-xl border border-slate-200 text-sm">
-                                    <select [(ngModel)]="newTraveler.gender" class="w-32 px-4 py-2 rounded-xl border border-slate-200 text-sm">
+                                    <input type="text" name="newTName" [(ngModel)]="newTraveler.name" placeholder="Traveler Name" class="flex-grow px-4 py-2 rounded-xl border border-slate-200 text-sm">
+                                    <input type="number" name="newTAge" [(ngModel)]="newTraveler.age" placeholder="Age" class="w-24 px-4 py-2 rounded-xl border border-slate-200 text-sm">
+                                    <select name="newTGender" [(ngModel)]="newTraveler.gender" class="w-32 px-4 py-2 rounded-xl border border-slate-200 text-sm">
                                         <option>Male</option><option>Female</option><option>Other</option>
                                     </select>
-                                    <button (click)="addTraveler()" class="px-4 py-2 bg-slate-800 text-white rounded-xl text-sm font-bold hover:bg-slate-900">+ Add</button>
+                                    <button type="button" (click)="addTraveler()" class="px-4 py-2 bg-slate-800 text-white rounded-xl text-sm font-bold hover:bg-slate-900">+ Add</button>
                                 </div>
 
                                 <div class="space-y-2">
@@ -443,24 +440,25 @@ export class ProfileComponent {
     this.savedTravelers.push({ ...this.newTraveler });
     this.newTraveler = { name: '', age: null, gender: 'Male' };
     this.isAddingTraveler = false;
+    this.saveProfile();
   }
 
   removeTraveler(index: number) {
     this.savedTravelers.splice(index, 1);
+    this.saveProfile();
   }
 
   saveProfile() {
     if (!this.editName.trim()) {
-      this.errorMessage = 'Name cannot be empty';
+      this.notificationService.showError('Name cannot be empty');
       return;
     }
 
     this.isLoading = true;
-    this.errorMessage = '';
-    const userId = this.authService.currentUser()?.id;
+    const userId = this.authService.currentUser()?.id || this.authService.currentUser()?._id;
 
     if (!userId) {
-      this.errorMessage = 'User ID not found';
+      this.notificationService.showError('User ID not found');
       this.isLoading = false;
       return;
     }
@@ -475,15 +473,14 @@ export class ProfileComponent {
     this.authService.updateProfile(userId, payload).subscribe({
       next: (res: any) => {
         this.isLoading = false;
-        this.successMessage = 'Profile updated successfully!';
+        this.notificationService.showSuccess('Profile updated successfully!');
         this.isEditing.set(false);
         // Update local user state immediately
         this.authService.currentUser.set({ ...this.authService.currentUser()!, ...payload, name: payload.fullName });
-        setTimeout(() => this.successMessage = '', 3000);
       },
       error: (err) => {
         this.isLoading = false;
-        this.errorMessage = err.error?.message || 'Failed to update profile';
+        this.notificationService.showError(err.error?.message || 'Failed to update profile');
       }
     });
   }
@@ -507,34 +504,38 @@ export class ProfileComponent {
     const { oldPassword, newPassword, confirmPassword } = this.passData;
 
     if (!oldPassword || !newPassword || !confirmPassword) {
-      this.errorMessage = 'All password fields are required';
+      this.notificationService.showError('All password fields are required');
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      this.errorMessage = 'New passwords do not match';
+      this.notificationService.showError('New passwords do not match');
       return;
     }
 
     if (newPassword.length < 6) {
-      this.errorMessage = 'New password must be at least 6 characters';
+      this.notificationService.showError('New password must be at least 6 characters');
       return;
     }
 
     this.isLoading = true;
-    this.errorMessage = '';
-    const userId = this.authService.currentUser()?.id;
+    const userId = this.authService.currentUser()?.id || this.authService.currentUser()?._id;
+
+    if (!userId) {
+      this.notificationService.showError('User ID not found');
+      this.isLoading = false;
+      return;
+    }
 
     this.authService.changePassword({ userId, oldPassword, newPassword }).subscribe({
       next: (res: any) => {
         this.isLoading = false;
-        this.successMessage = 'Password changed successfully!';
+        this.notificationService.showSuccess('Password changed successfully!');
         this.isChangingPassword = false;
-        setTimeout(() => this.successMessage = '', 3000);
       },
       error: (err) => {
         this.isLoading = false;
-        this.errorMessage = err.error?.message || 'Failed to change password';
+        this.notificationService.showError(err.error?.message || 'Failed to change password');
       }
     });
   }
