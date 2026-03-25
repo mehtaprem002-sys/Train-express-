@@ -87,7 +87,17 @@ async function generateBookingPDF(booking, res) {
     
     doc.fillColor('#1d4e89').fontSize(12);
     doc.text(booking.pnr || 'N/A', tCol1, y + 18, { width: tWidth, align: 'center' });
-    doc.text(`${booking.train?.number || ''}/${(booking.train?.name || '').toUpperCase()}`, tCol2, y + 18, { width: tWidth, align: 'center' });
+    
+    const trainStr = `${booking.train?.number || ''}/${(booking.train?.name || '').toUpperCase()}`;
+    let trnSize = 12;
+    doc.fontSize(trnSize);
+    while (doc.widthOfString(trainStr) > tWidth - 10 && trnSize > 6) {
+        trnSize -= 0.5;
+        doc.fontSize(trnSize);
+    }
+    doc.text(trainStr, tCol2, y + 18 + ((12 - trnSize) / 2), { width: tWidth, align: 'center', lineBreak: false });
+    
+    doc.fontSize(12);
     doc.text((booking.class?.type || 'N/A').toUpperCase() + ' (2S)', tCol3, y + 18, { width: tWidth, align: 'center' });
 
     doc.fillColor('black').font('Helvetica-Bold').fontSize(10);

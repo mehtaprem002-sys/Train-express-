@@ -501,58 +501,57 @@ export class PaymentComponent implements OnInit, OnDestroy {
     }
 
     processPayment() {
-        if (this.isPaymentValid() && this.bookingData) {
-            // Generate Random PNR
-            const pnr = 'PNR' + Math.floor(1000000000 + Math.random() * 9000000000).toString();
-
-            // Determine Status based on availability
-            let bookingStatus = 'Confirmed';
-            if (this.bookingData.class?.availability?.text?.startsWith('WL')) {
-                bookingStatus = 'Waitlist';
-            }
-
-            // Create Full Booking Object
-            const finalBooking = {
-                pnr: pnr,
-                ...this.bookingData,
-                selectedSeats: this.bookingData.selectedSeats,
-                paymentDetails: {
-                    method: this.selectedPaymentMethod(),
-                    amount: this.finalAmount,
-                    date: new Date().toISOString()
-                },
-                status: bookingStatus
-            };
-
-            // Clean undefined values for Firestore
-            const safeBooking = JSON.parse(JSON.stringify(finalBooking));
-
-            // Save to Backend
-            this.bookingService.createBooking(safeBooking).subscribe({
-                next: (res) => {
-                    // Use response from backend which contains assigned seats/berths
-                    this.router.navigate(['/booking-confirmation'], {
-                        replaceUrl: true,
-                        state: { booking: res }
-                    });
-                },
-                error: (err) => {
-                    console.error('Booking failed', err);
-                    if (err.status === 401 || err.error?.message === 'Please authenticate') {
-                        this.errorMessage = 'Session expired. Please log in again to complete your booking.';
-                        // Optional: this.router.navigate(['/login'], { queryParams: { returnUrl: this.router.url }});
-                    } else {
-                        this.errorMessage = err.error?.error || err.message || 'Failed to save booking. Please try again.';
-                    }
-                }
-            });
-
-        } else {
+        if (!this.isPaymentValid() || !this.bookingData) {
             if (this.selectedPaymentMethod() === 'CARD') {
                 this.cardForm.markAllAsTouched();
             } else {
                 this.errorMessage = 'Please complete the selected payment details first.';
             }
+            return;
         }
+
+        // Generate Random PNR
+        const pnr = 'PNR' + Math.floor(1000000000 + Math.random() * 9000000000).toString();
+
+        // Determine Status based on availability
+        let bookingStatus = 'Confirmed';
+        if (this.bookingData.class?.availability?.text?.startsWith('WL')) {
+            bookingStatus = 'Waitlist';
+        }
+
+        // Create Full Booking Object
+        const finalBooking = {
+            pnr: pnr,
+            ...this.bookingData,
+            selectedSeats: this.bookingData.selectedSeats,
+            paymentDetails: {
+                method: this.selectedPaymentMethod(),
+                amount: this.finalAmount,
+                date: new Date().toISOString()
+            },
+            status: bookingStatus
+        };
+
+        // Clean undefined values for Firestore/MongoDB
+        const safeBooking = JSON.parse(JSON.stringify(finalBooking));
+
+        // Save to Backend
+        this.bookingService.createBooking(safeBooking).subscribe({
+            next: (res) => {
+                // Use response from backend which contains assigned seats/berths
+                this.router.navigate(['/booking-confirmation'], {
+                    replaceUrl: true,
+                    state: { booking: res }
+                });
+            },
+            error: (err) => {
+                console.error('Booking failed', err);
+                if (err.status === 401 || err.error?.message === 'Please authenticate') {
+                    this.errorMessage = 'Session expired. Please log in again to complete your booking.';
+                } else {
+                    this.errorMessage = err.error?.error || err.message || 'Failed to save booking. Please try again.';
+                }
+            }
+        });
     }
 }

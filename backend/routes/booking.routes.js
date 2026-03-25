@@ -13,5 +13,6 @@ router.get('/:id/download', auth, bookingController.getBookingPDF);
 router.post('/cancel/:id', auth, bookingController.cancelBooking);
 router.delete('/:id', auth, bookingController.deleteBooking);
 router.delete('/admin/:id', auth, admin, bookingController.deleteBookingAdmin);
+router.post('/admin/confirm-wl/:id', auth, admin, bookingController.confirmWaitlistAdmin);
 
 module.exports = router;

@@ -292,6 +292,13 @@ type CardMode = 'signup' | 'forgot' | 'reset';
                               class="form-input"
                               required
                             >
+                            <button 
+                              type="button" 
+                              (click)="toggleConfirmPassword()" 
+                              class="password-toggle"
+                            >
+                              <span class="material-symbols-outlined">{{ showConfirmPassword() ? 'visibility' : 'visibility_off' }}</span>
+                            </button>
                           </div>
                         </div>
                       </div>

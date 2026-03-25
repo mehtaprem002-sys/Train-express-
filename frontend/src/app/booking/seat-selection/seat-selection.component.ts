@@ -132,6 +132,7 @@ export class SeatSelectionComponent implements OnInit {
   @Input() availabilityStatus: string = 'AVL';
   @Input() trainNumber: string = '';
   @Input() travelDate: string = '';
+  @Input() initialSelectedSeats: any[] = [];
   @Output() close = new EventEmitter<void>();
   @Output() confirm = new EventEmitter<any[]>();
 
@@ -142,6 +143,9 @@ export class SeatSelectionComponent implements OnInit {
   constructor(private bookingService: BookingService) { }
 
   ngOnInit() {
+    if (this.initialSelectedSeats && this.initialSelectedSeats.length > 0) {
+      this.selectedSeats = [...this.initialSelectedSeats];
+    }
     if (this.trainNumber && this.travelDate && this.coachType) {
       this.bookingService.getBookedSeats(this.trainNumber, this.travelDate, this.coachType).subscribe({
         next: (seats) => {
@@ -319,7 +323,6 @@ export class SeatSelectionComponent implements OnInit {
       }
       this.selectedSeats.push(seat);
     }
-    this.confirmSelection();
   }
 
   isSelected(seat: any): boolean {

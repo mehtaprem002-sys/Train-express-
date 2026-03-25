@@ -13,13 +13,20 @@ import { BookingService } from '../shared/booking.service';
         
         <!-- Header Section -->
         <div class="flex flex-col items-center justify-center mb-5">
-          <div class="w-16 h-16 bg-green-100 text-green-500 rounded-full flex items-center justify-center mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <div [ngClass]="booking?.status === 'Waitlist' ? 'bg-amber-100 text-amber-500' : 'bg-green-100 text-green-500'" class="w-16 h-16 rounded-full flex items-center justify-center mb-4 transition-colors">
+            <svg *ngIf="booking?.status !== 'Waitlist'" xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
             </svg>
+            <svg *ngIf="booking?.status === 'Waitlist'" xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
           </div>
-          <h2 class="text-3xl font-extrabold text-slate-900 mb-1">Booking Confirmed!</h2>
-          <p class="text-slate-500">Your ticket has been successfully booked.</p>
+          <h2 class="text-3xl font-extrabold text-slate-900 mb-1">
+            {{ booking?.status === 'Waitlist' ? 'Waitlist Ticket Booked!' : 'Booking Confirmed!' }}
+          </h2>
+          <p class="text-slate-500">
+            {{ booking?.status === 'Waitlist' ? 'Your waitlisted ticket has been generated.' : 'Your ticket has been successfully booked.' }}
+          </p>
         </div>
         
         <!-- Details Card -->

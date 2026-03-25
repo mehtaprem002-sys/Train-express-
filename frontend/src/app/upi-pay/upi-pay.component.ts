@@ -2,11 +2,12 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
+import { FormsModule } from '@angular/forms';
 
 @Component({
     selector: 'app-upi-pay',
     standalone: true,
-    imports: [CommonModule],
+    imports: [CommonModule, FormsModule],
     template: `
     <div class="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 font-sans text-slate-100">
       <div class="w-full max-w-sm bg-slate-800 rounded-3xl shadow-2xl overflow-hidden border border-slate-700 p-6 flex flex-col relative animate-fade-in-up">
@@ -61,11 +62,34 @@ import { HttpClient } from '@angular/common/http';
                 </div>
             </div>
 
-            <button *ngIf="status === 'pending'" (click)="completePayment()"
-                class="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-400 hover:to-orange-500 text-white rounded-xl py-4 font-black text-lg shadow-lg shadow-orange-500/20 active:scale-95 transition-all flex justify-center items-center gap-2">
-                <span class="material-symbols-outlined">lock</span>
-                Pay Securely Now
-            </button>
+            <ng-container *ngIf="status === 'pending'">
+                <!-- Initial Pay Button -->
+                <button *ngIf="!showPinEntry" (click)="showPinEntry = true"
+                    class="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-400 hover:to-orange-500 text-white rounded-xl py-4 font-black text-lg shadow-lg shadow-orange-500/20 active:scale-95 transition-all flex justify-center items-center gap-2">
+                    <span class="material-symbols-outlined">lock</span>
+                    Pay Securely Now
+                </button>
+
+                <!-- PIN Entry UI -->
+                <div *ngIf="showPinEntry" class="bg-slate-800 border border-slate-700 p-6 rounded-2xl flex flex-col items-center animate-fade-in-up">
+                    <h3 class="text-lg font-bold text-white mb-2">Enter UPI PIN</h3>
+                    <p class="text-xs text-slate-400 mb-6 text-center">Enter 4-digit PIN to securely pay ₹{{ amount }}</p>
+
+                    <input type="password" inputmode="numeric" maxlength="4" [(ngModel)]="upiPin" placeholder="••••"
+                           class="w-3/4 tracking-[1em] text-center text-3xl font-bold bg-slate-900 border-2 border-slate-700 focus:border-primary text-white px-4 py-4 rounded-xl outline-none transition-all placeholder:tracking-normal placeholder:text-slate-600 mb-6 shadow-inner">
+
+                    <button (click)="verifyAndPay()" [disabled]="upiPin.length !== 4 || isProcessing" 
+                            class="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-green-500/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                        <span *ngIf="!isProcessing" class="material-symbols-outlined text-[18px]">check_circle</span>
+                        <div *ngIf="isProcessing" class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        {{ isProcessing ? 'Verifying...' : 'Submit PIN' }}
+                    </button>
+                    
+                    <button *ngIf="!isProcessing" (click)="showPinEntry = false; upiPin = ''" class="mt-4 text-xs font-bold text-slate-500 hover:text-slate-300 transition-colors uppercase tracking-wider">
+                        Cancel
+                    </button>
+                </div>
+            </ng-container>
 
              <div *ngIf="status === 'completed'" class="bg-green-500/10 border border-green-500/30 rounded-xl p-4 text-center">
                  <span class="material-symbols-outlined text-green-500 text-4xl mb-2">check_circle</span>
@@ -91,6 +115,10 @@ export class UpiPayComponent implements OnInit {
     status: string = 'pending';
     loading: boolean = true;
     error: string = '';
+
+    showPinEntry: boolean = false;
+    upiPin: string = '';
+    isProcessing: boolean = false;
 
     constructor(private route: ActivatedRoute, private http: HttpClient) { }
 
@@ -120,17 +148,26 @@ export class UpiPayComponent implements OnInit {
         });
     }
 
+    verifyAndPay() {
+        if (this.upiPin.length === 4) {
+            this.isProcessing = true;
+            // Simulate bank verification delay
+            setTimeout(() => {
+                this.completePayment();
+            }, 1200);
+        }
+    }
+
     completePayment() {
         const backendHost = window.location.hostname;
-        this.loading = true;
         this.http.post<any>(`http://${backendHost}:5000/api/payments/intent/${this.intentId}/complete`, {}).subscribe({
             next: (res) => {
                 this.status = 'completed';
-                this.loading = false;
+                this.isProcessing = false;
             },
             error: (err) => {
                 this.error = 'Failed to process payment. Try again.';
-                this.loading = false;
+                this.isProcessing = false;
             }
         });
     }

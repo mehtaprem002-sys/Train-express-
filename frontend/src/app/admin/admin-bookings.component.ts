@@ -65,9 +65,26 @@ import { NotificationService } from '../shared/notification.service';
                              ₹{{ b.paymentDetails?.amount | number }}
                          </td>
                          <td class="px-6 py-4">
-                            <span [ngClass]="b.status === 'Confirmed' ? 'bg-green-100 text-green-700' : (b.status === 'Waitlist' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700')" class="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                                {{ b.status || 'Confirmed' }}
-                            </span>
+                             <div class="flex flex-col items-start gap-1.5">
+                                 <!-- Non-Waitlist Status Badge -->
+                                 <span *ngIf="b.status !== 'Waitlist' && b.status !== 'Waitlisted'" 
+                                       [ngClass]="b.status === 'Confirmed' || b.status === 'CNF' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'" 
+                                       class="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                                     {{ b.status || 'Confirmed' }}
+                                 </span>
+                                 
+                                 <!-- Waitlist Dropdown Badge -->
+                                 <div *ngIf="b.status === 'Waitlist' || b.status === 'Waitlisted'" class="relative inline-block">
+                                     <select (change)="onWaitlistAction($event, b.id || b._id)" 
+                                             class="appearance-none bg-yellow-100 text-yellow-700 pl-2 pr-6 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider outline-none cursor-pointer transition-colors hover:bg-yellow-200 shadow-sm border border-yellow-200/50">
+                                         <option value="WAITLIST" disabled selected>Waitlist</option>
+                                         <option value="CONFIRM" class="font-bold bg-white text-green-600">✓ Confirm Ticket</option>
+                                     </select>
+                                     <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1 text-yellow-700">
+                                         <span class="material-symbols-outlined" style="font-size: 16px;">arrow_drop_down</span>
+                                     </div>
+                                 </div>
+                             </div>
                          </td>
                          <td class="px-6 py-4 text-right">
                             <button *ngIf="b.status !== 'Cancelled'" (click)="cancelBooking(b.id || b._id)" 
@@ -154,6 +171,32 @@ export class AdminBookingsComponent implements OnInit {
             error: (err) => {
                 console.error('Failed to delete booking record', err);
                 this.notification.showError('Failed to delete booking record');
+            }
+        });
+    }
+
+    onWaitlistAction(event: Event, bookingId: string) {
+        const selectElement = event.target as HTMLSelectElement;
+        if (selectElement.value === 'CONFIRM') {
+            this.confirmWaitlistBooking(bookingId).finally(() => {
+                // Reset dropdown visually to Waitlist in case the user cancelled the prompt
+                selectElement.value = 'WAITLIST';
+            });
+        }
+    }
+
+    async confirmWaitlistBooking(bookingId: string) {
+        const confirmed = await this.notification.confirm('Are you sure you want to forcibly confirm this waitlisted ticket? This will bypass availability checks and allocate seats.');
+        if (!confirmed) return;
+
+        this.http.post(`${this.apiConfig.apiUrl}/bookings/admin/confirm-wl/${bookingId}`, {}, this.getHeaders()).subscribe({
+            next: () => {
+                this.notification.showSuccess('Waitlist ticket confirmed successfully');
+                this.loadBookings();
+            },
+            error: (err) => {
+                console.error('Failed to confirm waitlist ticket', err);
+                this.notification.showError('Failed to confirm waitlist ticket');
             }
         });
     }

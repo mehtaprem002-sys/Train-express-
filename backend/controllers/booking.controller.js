@@ -104,8 +104,26 @@ exports.createBooking = async (req, res) => {
         // Generate PNR
         const pnr = bookingData.pnr || Math.floor(1000000000 + Math.random() * 9000000000).toString();
 
+        let isWaitlisted = bookingData.isWaitlisted === true;
+        if (!isWaitlisted) {
+            if (bookingData.status === 'Waitlist' || bookingData.status === 'Waitlisted') isWaitlisted = true;
+            else if (bookingData.class?.availability?.status === 'WL') isWaitlisted = true;
+            else if (bookingData.class?.availability?.text?.startsWith('WL')) isWaitlisted = true;
+        }
+
         // Helper to determine coach and seats
         const assignSeats = (classType, passengers, selectedSeats) => {
+            if (isWaitlisted) {
+                return passengers.map((p) => ({
+                    ...p,
+                    coach: 'WL',
+                    seatNumber: null,
+                    berth: null,
+                    berthType: 'Waitlist',
+                    status: 'WL'
+                }));
+            }
+
             let coachPrefix = 'D1';
             const type = (classType || '').toString().toUpperCase();
 
@@ -176,7 +194,7 @@ exports.createBooking = async (req, res) => {
             ...bookingData,
             passengers: passengersWithSeats,
             pnr,
-            status: 'Confirmed'
+            status: isWaitlisted ? 'Waitlist' : 'Confirmed'
         });
 
         const savedBooking = await finalBooking.save();
@@ -477,5 +495,69 @@ exports.getBookedSeats = async (req, res) => {
     } catch (error) {
         console.error('Get Booked Seats Error:', error);
         res.status(500).json({ error: 'Failed to fetch booked seats' });
+    }
+};
+
+exports.confirmWaitlistAdmin = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const booking = await Booking.findById(id);
+
+        if (!booking) {
+            return res.status(404).json({ message: 'Booking not found' });
+        }
+
+        if (booking.status !== 'Waitlist' && booking.status !== 'Waitlisted') {
+            return res.status(400).json({ message: 'Only waitlisted bookings can be confirmed by admin' });
+        }
+
+        // Assign random seats for the passengers
+        let maxSeats = 100;
+        const startSeat = Math.floor(Math.random() * (60)) + 1;
+        
+        let coachPrefix = 'S' + (Math.floor(Math.random() * 10) + 1); // default fallback to Sleeper
+
+        // Try to derive coach from class type
+        const type = (booking.class?.type || '').toString().toUpperCase();
+        if (type.includes('1A') || type.includes('FIRST')) coachPrefix = 'H' + (Math.floor(Math.random() * 2) + 1);
+        else if (type.includes('2A') || type.includes('2 TIER')) coachPrefix = 'A' + (Math.floor(Math.random() * 3) + 1);
+        else if (type.includes('3A') || type.includes('3 TIER')) coachPrefix = 'B' + (Math.floor(Math.random() * 6) + 1);
+        else if (type.includes('CC') || type.includes('CHAIR')) coachPrefix = 'C' + (Math.floor(Math.random() * 4) + 1);
+
+        booking.passengers = booking.passengers.map((p, index) => {
+            const seatNo = startSeat + index;
+            let berthType = 'Seat';
+            if (['S1', 'B1', 'A1', 'H1'].includes(coachPrefix)) {
+                const mod8 = seatNo % 8;
+                if (mod8 === 1 || mod8 === 4) berthType = 'Lower';
+                else if (mod8 === 2 || mod8 === 5) berthType = 'Middle';
+                else if (mod8 === 3 || mod8 === 6) berthType = 'Upper';
+                else if (mod8 === 7) berthType = 'Side Lower';
+                else if (mod8 === 0) berthType = 'Side Upper';
+            }
+            if (['C1', 'E1', 'D1'].includes(coachPrefix)) {
+                const mod3 = seatNo % 3;
+                if (mod3 === 1) berthType = 'Window';
+                else if (mod3 === 2) berthType = 'Middle';
+                else berthType = 'Aisle';
+            }
+
+            return {
+                ...p,
+                coach: coachPrefix,
+                seatNumber: seatNo,
+                berth: seatNo,
+                berthType: berthType,
+                status: 'CNF'
+            };
+        });
+
+        booking.status = 'Confirmed';
+        await booking.save();
+
+        res.json({ message: 'Waitlisted booking successfully confirmed by admin', booking });
+    } catch (error) {
+        console.error('Admin Confirm WL Error:', error);
+        res.status(500).json({ error: 'Failed to confirm waitlisted booking' });
     }
 };

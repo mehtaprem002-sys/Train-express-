@@ -52,22 +52,24 @@ import { SeatSelectionComponent } from './seat-selection/seat-selection.componen
         <div class="lg:col-span-2 space-y-6">
             
             <!-- Seat Selection Card (Compact) -->
-             <div class="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex justify-between items-center group cursor-pointer hover:border-primary/50 transition-all" (click)="showSeatMap.set(true)">
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+             <div class="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex justify-between items-center group transition-all" [ngClass]="{'cursor-pointer hover:border-primary/50': !isWaitlisted, 'opacity-75 relative overflow-hidden': isWaitlisted}" (click)="!isWaitlisted && showSeatMap.set(true)">
+                <div *ngIf="isWaitlisted" class="absolute -right-4 top-4 bg-amber-500 text-white text-[10px] font-bold px-8 py-1 rotate-45 z-10 shadow-sm uppercase tracking-wider">Waitlist</div>
+                <div class="flex items-center gap-4 relative z-20" [class.opacity-50]="isWaitlisted">
+                    <div class="w-12 h-12 rounded-full flex items-center justify-center transition-transform" [ngClass]="isWaitlisted ? 'bg-amber-100 text-amber-500' : 'bg-primary/10 text-primary group-hover:scale-110'">
                         <span class="material-symbols-outlined text-2xl">event_seat</span>
                     </div>
                     <div>
                         <h2 class="font-bold text-slate-900 dark:text-white text-lg">Seat Selection</h2>
-                        <p class="text-slate-500 text-sm" *ngIf="selectedSeats.length === 0">Choose your preferred seats <span class="text-red-500 font-bold">*</span></p>
-                        <div *ngIf="selectedSeats.length > 0" class="flex flex-wrap gap-2 mt-1">
+                        <p class="text-slate-500 text-sm" *ngIf="selectedSeats.length === 0 && !isWaitlisted">Choose your preferred seats <span class="text-red-500 font-bold">*</span></p>
+                        <p class="text-amber-600 dark:text-amber-500 text-sm font-medium" *ngIf="isWaitlisted">Not applicable for WL</p>
+                        <div *ngIf="selectedSeats.length > 0 && !isWaitlisted" class="flex flex-wrap gap-2 mt-1">
                             <span *ngFor="let seat of selectedSeats" class="text-xs font-bold bg-primary/10 text-primary px-2 py-0.5 rounded">
                                 {{ seat.number }} ({{ seat.type }})
                             </span>
                         </div>
                     </div>
                 </div>
-                 <button type="button" class="text-primary font-bold text-sm hover:underline">
+                 <button type="button" *ngIf="!isWaitlisted" class="text-primary font-bold text-sm hover:underline">
                     {{ selectedSeats.length > 0 ? 'Change' : 'Select' }}
                 </button>
             </div>
@@ -78,6 +80,7 @@ import { SeatSelectionComponent } from './seat-selection/seat-selection.componen
                 [availabilityStatus]="selectedClass.availability?.status || 'AVL'"
                 [trainNumber]="train?.number"
                 [travelDate]="travelDate"
+                [initialSelectedSeats]="selectedSeats"
                 (close)="showSeatMap.set(false)"
                 (confirm)="onSeatsConfirmed($event)">
             </app-seat-selection>
@@ -251,7 +254,7 @@ import { SeatSelectionComponent } from './seat-selection/seat-selection.componen
 
                 <!-- Action Button in Sidebar for desktop -->
                 <div class="hidden lg:block">
-                     <button type="button" (click)="confirmBooking()" [disabled]="bookingForm.invalid || selectedSeats.length !== passengers.length"
+                     <button type="button" (click)="confirmBooking()" [disabled]="bookingForm.invalid || (!isWaitlisted && selectedSeats.length !== passengers.length)"
                         class="w-full bg-primary hover:bg-primary-dark text-white py-4 rounded-xl font-bold shadow-lg shadow-primary/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg">
                         Continue to Payment
                         <span class="material-symbols-outlined">arrow_forward</span>
@@ -266,7 +269,7 @@ import { SeatSelectionComponent } from './seat-selection/seat-selection.componen
                  <p class="text-xs font-bold text-slate-500 uppercase tracking-wide">Total</p>
                  <p class="text-xl font-bold text-slate-900 dark:text-white">₹{{ totalAmount }}</p>
             </div>
-            <button type="button" (click)="confirmBooking()" [disabled]="bookingForm.invalid || selectedSeats.length !== passengers.length"
+            <button type="button" (click)="confirmBooking()" [disabled]="bookingForm.invalid || (!isWaitlisted && selectedSeats.length !== passengers.length)"
                 class="bg-primary hover:bg-primary-dark text-white px-8 py-3 rounded-lg font-bold shadow-lg shadow-primary/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
                 Continue
                 <span class="material-symbols-outlined">arrow_forward</span>
@@ -401,6 +404,10 @@ export class BookingComponent implements OnInit {
         return this.baseFare + tax;
     }
 
+    get isWaitlisted() {
+        return this.selectedClass?.availability?.status === 'WL' || this.selectedClass?.availability?.text?.startsWith('WL');
+    }
+
     addPassenger(data?: any) {
         if (this.passengers.length >= 5) {
             alert('Maximum 5 passengers allowed per booking.');
@@ -438,14 +445,15 @@ export class BookingComponent implements OnInit {
     }
 
     confirmBooking() {
-        if (this.bookingForm.valid && this.selectedSeats.length === this.passengers.length) {
+        if (this.bookingForm.valid && (this.isWaitlisted || this.selectedSeats.length === this.passengers.length)) {
             const bookingData = {
                 train: this.train,
                 class: this.selectedClass,
                 passengers: this.bookingForm.value.passengers,
                 user: this.authService.currentUser() || {},
                 date: this.travelDate,
-                selectedSeats: this.selectedSeats
+                selectedSeats: this.selectedSeats,
+                isWaitlisted: this.isWaitlisted
             };
 
             this.router.navigate(['/payment'], {
@@ -453,7 +461,7 @@ export class BookingComponent implements OnInit {
             });
         } else {
             this.bookingForm.markAllAsTouched();
-            if (this.selectedSeats.length !== this.passengers.length) {
+            if (!this.isWaitlisted && this.selectedSeats.length !== this.passengers.length) {
                 alert('Please select seats for all passengers before proceeding.');
             }
         }
