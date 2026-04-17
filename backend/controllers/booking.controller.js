@@ -46,7 +46,27 @@ exports.createBooking = async (req, res) => {
 
             if (!availDoc) {
                 // Initialize default
-                const initialStatus = generateAvailability(trainNumber, travelDate, classType);
+                let initialStatus = null;
+                const Train = require('../models/Train');
+                const trainObj = await Train.findOne({ number: trainNumber });
+                
+                if (trainObj && trainObj.overrides) {
+                    const override = trainObj.overrides.find(o => o.date === travelDate && o.classType === classType);
+                    if (override) {
+                        if (override.availableSeats > 0) {
+                            initialStatus = { status: 'AVL', count: override.availableSeats, text: `AVL ${override.availableSeats}`, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30' };
+                        } else if (override.waitlistSeats > 0) {
+                            initialStatus = { status: 'WL', count: override.waitlistSeats, text: `WL ${override.waitlistSeats}`, color: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-100 dark:bg-yellow-900/30' };
+                        } else if (override.availableSeats === 0 || override.waitlistSeats === 0) {
+                            initialStatus = { status: 'REGRET', count: 0, text: 'REGRET', color: 'text-red-600 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-900/30' };
+                        }
+                    }
+                }
+
+                if (!initialStatus) {
+                    initialStatus = generateAvailability(trainNumber, travelDate, classType);
+                }
+
                 availDoc = new Availability({
                     trainNumber,
                     date: travelDate,
@@ -59,7 +79,19 @@ exports.createBooking = async (req, res) => {
             // Ensure class exists in doc
             const classesMap = availDoc.classes instanceof Map ? Object.fromEntries(availDoc.classes) : availDoc.classes;
             if (!classesMap[classType]) {
-                classesMap[classType] = generateAvailability(trainNumber, travelDate, classType);
+                let classStatus = null;
+                const Train = require('../models/Train');
+                const trainObj = await Train.findOne({ number: trainNumber });
+                if (trainObj && trainObj.overrides) {
+                    const override = trainObj.overrides.find(o => o.date === travelDate && o.classType === classType);
+                    if (override) {
+                        if (override.availableSeats > 0) classStatus = { status: 'AVL', count: override.availableSeats, text: `AVL ${override.availableSeats}`, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30' };
+                        else if (override.waitlistSeats > 0) classStatus = { status: 'WL', count: override.waitlistSeats, text: `WL ${override.waitlistSeats}`, color: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-100 dark:bg-yellow-900/30' };
+                        else if (override.availableSeats === 0 || override.waitlistSeats === 0) classStatus = { status: 'REGRET', count: 0, text: 'REGRET', color: 'text-red-600 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-900/30' };
+                    }
+                }
+                if (!classStatus) classStatus = generateAvailability(trainNumber, travelDate, classType);
+                classesMap[classType] = classStatus;
             }
 
             const currentStatus = classesMap[classType];
@@ -192,6 +224,7 @@ exports.createBooking = async (req, res) => {
 
         const finalBooking = new Booking({
             ...bookingData,
+            date: bookingData.date, // Explicitly ensure top-level date is saved
             passengers: passengersWithSeats,
             pnr,
             status: isWaitlisted ? 'Waitlist' : 'Confirmed'
@@ -336,7 +369,9 @@ exports.cancelBooking = async (req, res) => {
 
         // --- AVAILABILITY ROLLBACK LOGIC ---
         const trainNumber = booking.train?.number;
-        const travelDate = booking.date || booking.train?.date;
+        const travelDate = booking.date || booking.train?.date; 
+        console.log(`[DEBUG] Cancellation sync attempt for train=${trainNumber}, date=${travelDate}`);
+        
         // Robust class extraction: Handle both object { type: 'SL' } and string 'SL'
         const rawClass = booking.class;
         const classType = (rawClass && typeof rawClass === 'object' && rawClass.type) ? rawClass.type : rawClass;
@@ -344,83 +379,48 @@ exports.cancelBooking = async (req, res) => {
         const passengerCount = (booking.passengers || []).length;
 
         if (trainNumber && travelDate && classType) {
-            const availDoc = await Availability.findOne({ trainNumber, date: travelDate });
-            if (availDoc) {
-                const classesMap = availDoc.classes instanceof Map ? Object.fromEntries(availDoc.classes) : availDoc.classes;
-                const currentStatus = classesMap[classType];
+            let availDoc = await Availability.findOne({ trainNumber, date: travelDate });
 
-                if (currentStatus) {
-                    if (currentStatus.status === 'AVL') {
-                        currentStatus.count += passengerCount;
+            if (!availDoc) {
+                console.log(`[DEBUG] Availability doc missing for cancellation. Creating new one for ${trainNumber} on ${travelDate}`);
+                availDoc = new Availability({ trainNumber, date: travelDate, classes: {} });
+            }
+
+            // Handle Map vs Object
+            let classesMap = {};
+            if (availDoc.classes instanceof Map) {
+                classesMap = Object.fromEntries(availDoc.classes);
+            } else {
+                classesMap = availDoc.classes || {};
+            }
+
+            let currentStatus = classesMap[classType];
+
+            if (!currentStatus) {
+                console.log(`[DEBUG] Class entry ${classType} missing in Availability. Initializing from Train defaults.`);
+                // Fallback to a default state if missing, so we can at least increment from 0
+                currentStatus = { status: 'WL', count: 0, text: 'WL 0' };
+            }
+
+            if (currentStatus) {
+                console.log(`[DEBUG] Current state for ${classType}: ${currentStatus.status} ${currentStatus.count}`);
+                if (currentStatus.status === 'AVL') {
+                    currentStatus.count += passengerCount;
+                    currentStatus.text = `AVL ${currentStatus.count}`;
+                } else if (currentStatus.status === 'WL') {
+                    // Determine effective count change: existing WL count - passengers cancelled
+                    let netWL = (currentStatus.count || 0) - passengerCount;
+
+                    if (netWL < 0) {
+                        // If netWL is negative, it means we have cleared the waitlist 
+                        // and have extra seats available.
+                        currentStatus.status = 'AVL';
+                        currentStatus.count = Math.abs(netWL);
                         currentStatus.text = `AVL ${currentStatus.count}`;
-                    } else if (currentStatus.status === 'WL') {
-                        if (currentStatus.count > 0) {
-                            currentStatus.count = Math.max(0, currentStatus.count - passengerCount);
-                            // If it becomes 0, it stays WL 0 (Waitlist empty but train full)
-                            // However, usually if you cancel a WL ticket, you just remove yourself from WL.
-                            // If you are confirming a WL ticket because someone else cancelled, that is a different flow (allocating seat).
-                            // Here we assume "user cancelled their ticket".
-                            // If user was WL, WL count decreases.
-                            // If user was CNF (which implies status was AVL or WL passed), this logic is tricky.
-                            // Simplified Assumption: If status is WL, only WL tickets can be cancelled? 
-                            // No, a confirmed ticket can be cancelled while status is WL.
-                            // IF status is WL, and a Confirmed ticket is cancelled -> Availability increases (WL count decreases? No, seat becomes available for WL).
-                            // Correct Logic for "Real-time view":
-                            // If status IS WL, and a booking is cancelled:
-                            // We should move one person from WL to CNF (conceptually).
-                            // So, WL count decreases.
-                            // If WL count becomes 0, does it switch to AVL?
-                            // Only if we have MORE seats than WL.
-                            // Let's stick to the requested simple logic: "If available seats hit zero, new bookings WL. If someone cancels, reduce WL first before raising available seats."
-
-                            currentStatus.text = `WL ${currentStatus.count}`;
-
-                            // If WL becomes negative (more cancellations than WL people), switch to AVL
-                            // But here we did Math.max(0...), so it stops at WL 0.
-                            // Check if we gained extra seats?
-                            // The prompt says: "reduce waiting list before raising available seats"
-                            // So if WL is 2, cancel 1 -> WL 1.
-                            // If WL is 1, cancel 1 -> WL 0.
-                            // If WL is 0, cancel 1 -> THIS should become AVL 1.
-                            // My current logic above stuck at WL 0. Fix:
-
-                            // Let's re-eval:
-                            // We need to know the NET change.
-                            // Actually, if I cancel a ticket, I am freeing up a resource.
-                            // If status is WL, that resource goes to the WL queue.
-                            // So WL count decreases.
-
-                            // What if WL count was ALREADY 0? (Meaning train full, no waitlist).
-                            // Then we transform to AVL.
-                        }
-
-                        // Re-implementing based on "reduce waiting list before raising available seats"
-                        // This implies we simply subtract from WL count.
-                        // But we need to handle the transition to AVL if WL is empty.
-
-                        // Determine effective count change
-                        // existing WL count - passengers cancelled
-                        let netWL = currentStatus.count - passengerCount;
-
-                        if (netWL < 0) {
-                            // We cleared the WL and have extra seats
-                            currentStatus.status = 'AVL';
-                            currentStatus.count = Math.abs(netWL);
-                            currentStatus.text = `AVL ${currentStatus.count}`;
-                            currentStatus.color = 'text-green-600 dark:text-green-400';
-                            currentStatus.bg = 'bg-green-100 dark:bg-green-900/30';
-                        } else {
-                            // Still in WL or exactly 0
-                            currentStatus.count = netWL;
-                            currentStatus.text = `WL ${currentStatus.count}`;
-                        }
-                    }
-
-                    if (availDoc.classes instanceof Map) {
-                        availDoc.classes.set(classType, currentStatus);
+                        currentStatus.color = 'text-green-600 dark:text-green-400';
+                        currentStatus.bg = 'bg-green-100 dark:bg-green-900/30';
+                        console.log(`[DEBUG] Transitioned from WL to AVL. New Count: ${currentStatus.count}`);
                     } else {
-                        availDoc.classes = classesMap;
-                        availDoc.markModified('classes');
                     }
                     await availDoc.save();
                 }

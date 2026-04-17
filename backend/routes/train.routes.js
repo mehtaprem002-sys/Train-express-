@@ -7,6 +7,7 @@ router.get('/search', trainController.searchTrains);
 router.get('/stations', trainController.getStations);
 router.get('/admin/all', auth, admin, trainController.getAllTrains);
 router.post('/', auth, admin, trainController.createTrain);
+router.get('/:id/simulate', auth, admin, trainController.simulateOverride);
 router.put('/:id', auth, admin, trainController.updateTrain);
 router.delete('/:id', auth, admin, trainController.deleteTrain);
 

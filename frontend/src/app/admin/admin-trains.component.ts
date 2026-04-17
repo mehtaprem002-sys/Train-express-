@@ -82,6 +82,57 @@ import { NotificationService } from '../shared/notification.service';
                          </div>
                      </div>
 
+                     <!-- Advanced Date/Class Overrides -->
+                     <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-4 bg-slate-50 dark:bg-slate-800/50">
+                         <h4 class="text-sm font-bold text-slate-800 dark:text-white mb-3">Custom Overrides (Per Date & Class)</h4>
+                         
+                         <!-- Override List -->
+                         <div *ngIf="overrides.length > 0" class="mb-4 space-y-2">
+                             <ng-container *ngFor="let o of overrides; let i = index">
+                                 <div *ngIf="isFutureOrToday(o.date)" class="flex justify-between items-center bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
+                                     <div>
+                                         <span class="font-bold text-slate-700 dark:text-slate-300">{{ o.date | date:'MMM d, y' }}</span>
+                                         <span class="font-mono bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded mx-2">{{ o.classType }}</span>
+                                         <span *ngIf="o.availableSeats !== null" class="text-green-600 font-bold">AVL {{ o.availableSeats }}</span>
+                                         <span *ngIf="o.waitlistSeats !== null" class="text-yellow-600 font-bold">WL {{ o.waitlistSeats }}</span>
+                                         <span *ngIf="o.price !== null && o.price !== undefined" class="ml-2 font-medium">₹{{ o.price }}</span>
+                                     </div>
+                                     <button type="button" (click)="removeOverride(i)" class="text-red-500 hover:bg-red-50 p-1 rounded transition-colors"><span class="material-symbols-outlined text-[16px]">delete</span></button>
+                                 </div>
+                             </ng-container>
+                         </div>
+
+                         <!-- Add Override Form -->
+                         <div class="grid grid-cols-5 gap-2 items-end">
+                              <div class="col-span-1">
+                                  <label class="block text-[10px] font-bold text-slate-500 mb-1">Date</label>
+                                  <input type="date" [min]="minDate" [(ngModel)]="overrideDateInput" (ngModelChange)="onOverrideInputChanged()" name="oDate" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-1.5 text-xs">
+                              </div>
+                              <div class="col-span-1">
+                                  <label class="block text-[10px] font-bold text-slate-500 mb-1">Class</label>
+                                  <select [(ngModel)]="overrideClassInput" (ngModelChange)="onOverrideInputChanged()" name="oClass" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-1.5 text-xs">
+                                      <option value="">Select</option>
+                                      <option *ngFor="let c of classesInput.split(',')" [value]="c.trim()">{{ c.trim() }}</option>
+                                  </select>
+                              </div>
+                              <div class="col-span-1">
+                                  <label class="block text-[10px] font-bold text-slate-500 mb-1">AVL</label>
+                                  <input type="number" [(ngModel)]="overrideAvailInput" name="oAvl" placeholder="AVL" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-1.5 text-xs">
+                              </div>
+                              <div class="col-span-1">
+                                  <label class="block text-[10px] font-bold text-slate-500 mb-1">WL</label>
+                                  <input type="number" [(ngModel)]="overrideWaitlistInput" name="oWl" placeholder="WL" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-1.5 text-xs">
+                              </div>
+                              <div class="col-span-1">
+                                  <label class="block text-[10px] font-bold text-slate-500 mb-1">Price (₹)</label>
+                                  <input type="number" [(ngModel)]="overridePriceInput" name="oPrice" placeholder="₹" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded p-1.5 text-xs">
+                              </div>
+                         </div>
+                         <button type="button" (click)="addOverride()" class="mt-3 w-full bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                            + Add Override
+                         </button>
+                     </div>
+
                      <!-- Simplified for prototype: Comma separated runsOn -->
                      <div>
                          <label class="block text-xs font-bold text-slate-500 mb-1">Runs On (Comma separated: Mon,Tue...)</label>
@@ -126,15 +177,27 @@ export class AdminTrainsComponent implements OnInit {
     // Form Model
     currentTrain: any = {};
     runsOnInput = '';
+    overrides: any[] = [];
+    overrideDateInput = '';
+    overrideClassInput = '';
+    overrideAvailInput: number | null = null;
+    overrideWaitlistInput: number | null = null;
+    overridePriceInput: number | null = null;
     classesInput = '';
     sourceStation = '';
     destStation = '';
+    minDate = '';
 
     private apiUrl = 'http://localhost:5000/api/trains';
 
     constructor(private http: HttpClient, private notification: NotificationService, private cdr: ChangeDetectorRef) { }
 
     ngOnInit() {
+        const today = new Date();
+        const y = today.getFullYear();
+        const m = String(today.getMonth() + 1).padStart(2, '0');
+        const d = String(today.getDate()).padStart(2, '0');
+        this.minDate = `${y}-${m}-${d}`;
         this.fetchTrains();
     }
 
@@ -147,6 +210,15 @@ export class AdminTrainsComponent implements OnInit {
             }
         }
         return { headers };
+    }
+
+    isFutureOrToday(dateStr: string): boolean {
+        if (!dateStr) return true;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const checkDate = new Date(dateStr);
+        checkDate.setHours(0, 0, 0, 0);
+        return checkDate >= today;
     }
 
     fetchTrains() {
@@ -162,6 +234,7 @@ export class AdminTrainsComponent implements OnInit {
     openModal() {
         this.currentTrain = { number: '', name: '', runsOn: [], classes: [], schedule: [] };
         this.runsOnInput = '';
+        this.overrides = [];
         this.classesInput = '';
         this.sourceStation = '';
         this.destStation = '';
@@ -172,6 +245,7 @@ export class AdminTrainsComponent implements OnInit {
     editTrain(train: any) {
         this.currentTrain = { ...train };
         this.runsOnInput = train.runsOn ? train.runsOn.join(',') : '';
+        this.overrides = train.overrides ? [...train.overrides] : [];
         this.classesInput = train.classes ? train.classes.join(',') : '';
 
         // Extract endpoints from schedule for simplified editing
@@ -182,6 +256,55 @@ export class AdminTrainsComponent implements OnInit {
 
         this.isEditing = true;
         this.showModal = true;
+    }
+
+    onOverrideInputChanged() {
+        if (this.isEditing && this.currentTrain.id && this.overrideDateInput && this.overrideClassInput) {
+            this.http.get<any>(`${this.apiUrl}/${this.currentTrain.id}/simulate?date=${this.overrideDateInput}&classType=${this.overrideClassInput}`, this.getHeaders())
+            .subscribe({
+                next: (data) => {
+                    this.overridePriceInput = data.price;
+                    if (data.availability.status === 'AVL') {
+                        this.overrideAvailInput = data.availability.count;
+                        this.overrideWaitlistInput = null;
+                    } else if (data.availability.status === 'WL') {
+                        this.overrideWaitlistInput = data.availability.count;
+                        this.overrideAvailInput = null;
+                    } else {
+                        this.overrideAvailInput = null;
+                        this.overrideWaitlistInput = null;
+                    }
+                    this.cdr.detectChanges();
+                },
+                error: (err) => console.error('Simulation failed', err)
+            });
+        }
+    }
+
+    addOverride() {
+        if (!this.overrideDateInput || !this.overrideClassInput) {
+            alert('Date and Class are required to add an override.');
+            return;
+        }
+        if (!this.isFutureOrToday(this.overrideDateInput)) {
+            alert('Cannot add an override for a past date.');
+            return;
+        }
+        this.overrides.push({
+            date: this.overrideDateInput,
+            classType: this.overrideClassInput,
+            availableSeats: this.overrideAvailInput !== null && String(this.overrideAvailInput).trim() !== '' ? Number(this.overrideAvailInput) : null,
+            waitlistSeats: this.overrideWaitlistInput !== null && String(this.overrideWaitlistInput).trim() !== '' ? Number(this.overrideWaitlistInput) : null,
+            price: this.overridePriceInput !== null && String(this.overridePriceInput).trim() !== '' ? Number(this.overridePriceInput) : null
+        });
+        
+        this.overrideAvailInput = null;
+        this.overrideWaitlistInput = null;
+        this.overridePriceInput = null;
+    }
+
+    removeOverride(index: number) {
+        this.overrides.splice(index, 1);
     }
 
     closeModal() {
@@ -202,19 +325,28 @@ export class AdminTrainsComponent implements OnInit {
         const runsOn = this.runsOnInput.split(',').map(s => s.trim()).filter(s => s);
         const classes = this.classesInput.split(',').map(s => s.trim()).filter(s => s);
 
-        // Construct minimum viable schedule for searching
-        const schedule = [
-            { station: this.sourceStation, departure: '08:00', arrival: '08:00', distanceFromStart: 0 },
-            { station: this.destStation, departure: '20:00', arrival: '20:00', distanceFromStart: 500 }
-        ];
+        // Preserve existing schedule for editing, or construct minimum viable schedule for new trains
+        let schedule = this.currentTrain.schedule ? [...this.currentTrain.schedule] : [];
 
+        if (this.isEditing && schedule.length >= 2) {
+            schedule[0] = { ...schedule[0], station: this.sourceStation };
+            schedule[schedule.length - 1] = { ...schedule[schedule.length - 1], station: this.destStation };
+        } else {
+            schedule = [
+                { station: this.sourceStation, departure: '08:00', arrival: '08:00', distanceFromStart: 0 },
+                { station: this.destStation, departure: '20:00', arrival: '20:00', distanceFromStart: 500 }
+            ];
+        }
 
         const payload = {
             ...this.currentTrain,
             runsOn,
             classes,
             schedule,
-            basePrice: 500 // Default base price
+            from: this.sourceStation,
+            to: this.destStation,
+            basePrice: this.isEditing ? this.currentTrain.basePrice : 500,
+            overrides: this.overrides
         };
 
         if (this.isEditing) {

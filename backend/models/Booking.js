@@ -15,6 +15,9 @@ const bookingSchema = new mongoose.Schema({
         departure: String,
         arrival: String
     },
+    date: {
+        type: String, // Explicit top-level date in YYYY-MM-DD format
+    },
     passengers: [{
         name: String,
         age: Number,

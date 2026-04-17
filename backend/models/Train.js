@@ -17,6 +17,8 @@ const trainSchema = new mongoose.Schema({
     runsOn: [String],
     classes: [String],
     pantry: { type: Boolean, default: false },
+    availableSeats: { type: Number, default: null },
+    waitlistSeats: { type: Number, default: null },
     basePrice: Number, // Add basePrice field
     route: [String], // Array of station codes
     schedule: [{
@@ -25,6 +27,13 @@ const trainSchema = new mongoose.Schema({
         departure: String,
         arrival: String,
         distanceFromStart: Number
+    }],
+    overrides: [{
+        date: String,
+        classType: String,
+        availableSeats: { type: Number, default: null },
+        waitlistSeats: { type: Number, default: null },
+        price: { type: Number, default: null }
     }]
 }, { timestamps: true });
 

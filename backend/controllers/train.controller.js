@@ -154,11 +154,13 @@ exports.searchTrains = async (req, res) => {
 
         // Helper: Robust Station Matching
         const findStationIndex = (schedule, query, resolved) => {
+            if (!schedule || !Array.isArray(schedule)) return -1;
             const nq = normalize(query);
             const nr = normalize(resolved);
 
             // 1. Try Exact Match First
             let idx = schedule.findIndex(s => {
+                if (!s || !s.station) return false;
                 const ns = normalize(s.station);
                 return ns === nq || ns === nr;
             });
@@ -206,12 +208,12 @@ exports.searchTrains = async (req, res) => {
 
         // --- STEP 1: DIRECT TRAINS ---
         allTrains.forEach(train => {
-            if (searchDay && !train.runsOn.includes(searchDay)) return;
+            if (searchDay && !(train.runsOn || []).includes(searchDay)) return;
 
             const startIdx = findStationIndex(train.schedule, from, sourceName);
             const endIdx = findStationIndex(train.schedule, to, destName);
 
-            if (startIdx !== -1 && endIdx !== -1 && startIdx < endIdx) {
+            if (startIdx !== -1 && endIdx !== -1 && startIdx < endIdx && train.schedule && train.schedule.length > endIdx) {
                 // Found Direct
                 const leg = createLeg(train, startIdx, endIdx, date, availMap);
                 const stopsCount = endIdx - startIdx - 1;
@@ -267,9 +269,9 @@ exports.searchTrains = async (req, res) => {
         // Forward Reachability from Source
         const firstLegs = [];
         allTrains.forEach(train => {
-            if (searchDay && !train.runsOn.includes(searchDay)) return;
+            if (searchDay && !(train.runsOn || []).includes(searchDay)) return;
             const startIdx = findStationIndex(train.schedule, from, sourceName);
-            if (startIdx !== -1) {
+            if (startIdx !== -1 && train.schedule) {
                 for (let i = startIdx + 1; i < train.schedule.length; i++) {
                     firstLegs.push({
                         train,
@@ -286,7 +288,7 @@ exports.searchTrains = async (req, res) => {
         const lastLegs = [];
         allTrains.forEach(train => {
             const endIdx = findStationIndex(train.schedule, to, destName);
-            if (endIdx !== -1) {
+            if (endIdx !== -1 && train.schedule) {
                 for (let i = 0; i < endIdx; i++) {
                     lastLegs.push({
                         train,
@@ -375,6 +377,9 @@ exports.searchTrains = async (req, res) => {
         });
 
         results.sort((a, b) => {
+            if (a.isDirect && !b.isDirect) return -1;
+            if (!a.isDirect && b.isDirect) return 1;
+
             const parseDur = (d) => {
                 const parts = d.split('h ');
                 const h = parseInt(parts[0]) || 0;
@@ -388,7 +393,7 @@ exports.searchTrains = async (req, res) => {
 
     } catch (error) {
         console.error('Search Error:', error);
-        res.status(500).json({ error: 'Search failed' });
+        res.status(500).json({ error: 'Search failed', details: error.message, stack: error.stack });
     }
 };
 
@@ -412,17 +417,26 @@ const createLeg = (train, startIdx, endIdx, searchDate, availMap) => {
     };
 
     const getPrice = (cls) => {
+        const dateToUse = searchDate || new Date().toISOString().split('T')[0];
+        if (train.overrides && train.overrides.length > 0) {
+             const override = train.overrides.find(o => o.date === dateToUse && o.classType === cls);
+             if (override && override.price != null && override.price > 0) {
+                 return override.price;
+             }
+        }
+
         let rate = RATE_PER_KM[cls] || 0.65;
         let base = BASE_FARE[cls] || 100;
 
         // Train Type Multiplier
         let typeMult = 1.0;
-        if (train.type.includes('Rajdhani') || train.type.includes('Duronto') || train.type.includes('Vande')) {
+        const tt = train.type || '';
+        if (tt.includes('Rajdhani') || tt.includes('Duronto') || tt.includes('Vande')) {
             typeMult = 1.15; // Reduced from 1.3 to make it more realistic
             if (cls === '1A' || cls === 'EC') typeMult = 1.2;
-        } else if (train.type.includes('Shatabdi')) {
+        } else if (tt.includes('Shatabdi')) {
             typeMult = 1.10;
-        } else if (train.type === 'Superfast') {
+        } else if (tt === 'Superfast') {
             typeMult = 1.05;
         }
 
@@ -488,7 +502,7 @@ const createLeg = (train, startIdx, endIdx, searchDate, availMap) => {
     const dateToUse = searchDate || new Date().toISOString().split('T')[0];
 
     const getRealAvailability = (cls) => {
-        // 1. Check DB map
+        // Priority 1: Check Live DB map (Bookings/Overrides combined LIVE state)
         if (availMap && availMap.has(train.number)) {
             const doc = availMap.get(train.number);
             let statusObj = null;
@@ -505,14 +519,58 @@ const createLeg = (train, startIdx, endIdx, searchDate, availMap) => {
             }
         }
 
-        // 2. Fallback to Generator
+        // Priority 2: --- ADVANCED PER-CLASS PER-DATE OVERRIDE ---
+        if (train.overrides && train.overrides.length > 0) {
+             const override = train.overrides.find(o => o.date === dateToUse && o.classType === cls);
+             if (override) {
+                 if (override.availableSeats != null && override.availableSeats > 0) {
+                     return { status: 'AVL', count: override.availableSeats, text: `AVL ${override.availableSeats}`, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30' };
+                 } else if (override.waitlistSeats != null && override.waitlistSeats > 0) {
+                     return { status: 'WL', count: override.waitlistSeats, text: `WL ${override.waitlistSeats}`, color: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-100 dark:bg-yellow-900/30' };
+                 } else if (override.availableSeats === 0 || override.waitlistSeats === 0) {
+                     return { status: 'REGRET', count: 0, text: 'REGRET', color: 'text-red-600 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-900/30' };
+                 }
+             }
+        }
+
+        // Priority 3: --- LEGACY GENERIC OVERRIDE (Fallback) ---
+        if (train.availableSeats != null || train.waitlistSeats != null) {
+            if (train.availableSeats > 0) {
+                return {
+                    status: 'AVL',
+                    count: train.availableSeats,
+                    text: `AVL ${train.availableSeats}`,
+                    color: 'text-green-600 dark:text-green-400',
+                    bg: 'bg-green-100 dark:bg-green-900/30'
+                };
+            } else if (train.waitlistSeats > 0) {
+                return {
+                    status: 'WL',
+                    count: train.waitlistSeats,
+                    text: `WL ${train.waitlistSeats}`,
+                    color: 'text-yellow-700 dark:text-yellow-400',
+                    bg: 'bg-yellow-100 dark:bg-yellow-900/30'
+                };
+            } else {
+                return {
+                    status: 'REGRET',
+                    count: 0,
+                    text: 'REGRET',
+                    color: 'text-red-600 dark:text-red-400',
+                    bg: 'bg-red-100 dark:bg-red-900/30'
+                };
+            }
+        }
+        // -----------------------------
+
+        // Priority 4. Fallback to Generator
         return exports.generateAvailability(train.number, dateToUse, cls);
     };
 
 
     // Duration
-    const depTime = startStop.departure || startStop.arrival;
-    const arrTime = endStop.arrival || endStop.departure;
+    const depTime = startStop.departure || startStop.arrival || '00:00';
+    const arrTime = endStop.arrival || endStop.departure || '00:00';
 
     let mins = 0;
     const [h1, m1] = depTime.split(':').map(Number);
@@ -536,7 +594,7 @@ const createLeg = (train, startIdx, endIdx, searchDate, availMap) => {
         estimatedDeparture: addMinutes(depTime, delay),
         estimatedArrival: addMinutes(arrTime, delay),
         liveStatus: delay > 0 ? `Running late by ${delay} mins` : 'On Time',
-        classes: train.classes.map(c => ({
+        classes: (train.classes || []).map(c => ({
 
             type: c,
             price: getPrice(c),
@@ -545,11 +603,95 @@ const createLeg = (train, startIdx, endIdx, searchDate, availMap) => {
     };
 };
 
+exports.simulateOverride = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { date, classType } = req.query;
+        if (!id || !date || !classType) return res.status(400).json({ error: 'Missing parameters' });
+
+        const train = await Train.findById(id);
+        if (!train) return res.status(404).json({ error: 'Train not found' });
+
+        let dist = 500;
+        if (train.schedule && train.schedule.length >= 2) {
+            const startStop = train.schedule[0];
+            const endStop = train.schedule[train.schedule.length - 1];
+            dist = Math.abs(endStop.distanceFromStart - startStop.distanceFromStart);
+        }
+
+        const RATE_PER_KM = { '2S': 0.45, 'SL': 0.65, 'CC': 1.50, '3A': 1.40, '2A': 2.00, '1A': 3.20, 'EC': 2.80 };
+        const BASE_FARE = { '2S': 60, 'SL': 100, 'CC': 250, '3A': 350, '2A': 550, '1A': 900, 'EC': 750 };
+
+        const getPrice = (cls) => {
+            let rate = RATE_PER_KM[cls] || 0.65;
+            let base = BASE_FARE[cls] || 100;
+            let typeMult = 1.0;
+            if (train.type && (train.type.includes('Rajdhani') || train.type.includes('Duronto') || train.type.includes('Vande'))) {
+                typeMult = 1.15;
+                if (cls === '1A' || cls === 'EC') typeMult = 1.2;
+            } else if (train.type && train.type.includes('Shatabdi')) {
+                typeMult = 1.10;
+            } else if (train.type === 'Superfast') {
+                typeMult = 1.05;
+            }
+            let rawPrice = (base + (dist * rate)) * typeMult;
+
+            let seed = 0;
+            const hashStr = (train.number || '0000') + cls;
+            for (let i = 0; i < hashStr.length; i++) {
+                seed = ((seed << 5) - seed) + hashStr.charCodeAt(i);
+                seed |= 0;
+            }
+            const trainNumInt = parseInt((train.number || '0').replace(/\D/g, '')) || 0;
+            const extraJitter = (trainNumInt % 17) * 4;
+            const combinedJitter = ((Math.abs(seed) % 75) - 37) + extraJitter;
+            rawPrice += combinedJitter;
+
+            let finalPrice = Math.floor(rawPrice);
+            const lastDigitTarget = (trainNumInt + (cls.charCodeAt(0) || 0)) % 10;
+            const currentLastDigit = finalPrice % 10;
+            let diff = lastDigitTarget - currentLastDigit;
+            finalPrice += diff;
+            if (finalPrice < base) finalPrice = base + lastDigitTarget;
+            return finalPrice;
+        };
+
+        const generatedAvailability = exports.generateAvailability(train.number, date, classType);
+        const generatedPrice = getPrice(classType);
+
+        res.json({
+            availability: generatedAvailability,
+            price: generatedPrice
+        });
+    } catch (e) {
+        console.error('simulateOverride error:', e);
+        res.status(500).json({ error: 'Simulation failed' });
+    }
+};
+
 exports.getAllTrains = async (req, res) => {
     try {
         const trains = await Train.find({});
         console.log(`getAllTrains called. Found ${trains.length} trains.`);
-        res.json(trains.map(t => ({ id: t._id, ...t.toObject() })));
+        
+        const today = new Date().toISOString().split('T')[0];
+
+        const result = trains.map(t => {
+            const trainObj = t.toObject();
+            if (trainObj.availableSeats == null && trainObj.waitlistSeats == null) {
+                // Show dynamic availability based on today so it is not blank
+                const defaultClass = (trainObj.classes && trainObj.classes.length > 0) ? trainObj.classes[0] : 'SL';
+                const avail = exports.generateAvailability(trainObj.number, today, defaultClass);
+                if (avail.status === 'AVL') {
+                    trainObj.availableSeats = avail.count;
+                } else if (avail.status === 'WL') {
+                    trainObj.waitlistSeats = avail.count;
+                }
+            }
+            return { id: t._id, ...trainObj };
+        });
+
+        res.json(result);
     } catch (error) {
         console.error('getAllTrains error:', error);
         res.status(500).json({ error: 'Failed' });
@@ -561,18 +703,124 @@ exports.createTrain = async (req, res) => {
         const newTrain = await Train.create(req.body);
         res.status(201).json({ id: newTrain._id, ...newTrain.toObject() });
     } catch (error) {
+        console.error('API Error in createTrain:', error);
         res.status(500).json({ error: 'Failed' });
     }
 };
 
 exports.updateTrain = async (req, res) => {
     try {
-        const updated = await Train.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const { id } = req.params;
+        console.log(`[updateTrain] Request for ID: ${id}. Overrides:`, req.body.overrides?.length);
+        
+        // 1. Fetch the existing train
+        const train = await Train.findById(id);
+        if (!train) return res.status(404).json({ error: 'Train not found' });
+
+        const oldOverrides = [...(train.overrides || [])];
+        const oldAvailable = train.availableSeats;
+        const oldWaitlist = train.waitlistSeats;
+
+        const newOverrides = req.body.overrides || [];
+
+        // 2. Update train properties
+        Object.assign(train, req.body);
+        
+        // Explicitly set overrides to handle deletions correctly in Mongoose
+        train.overrides = newOverrides;
+        
+        // 3. Save the train
+        const updated = await train.save();
+
+        // 4. Sync Overrides to Live Availability
+        // a) Handle New/Updated Overrides
+        for (let override of newOverrides) {
+            const oldMatch = oldOverrides.find(o => o.date === override.date && o.classType === override.classType);
+            const isChanged = !oldMatch || oldMatch.availableSeats !== override.availableSeats || oldMatch.waitlistSeats !== override.waitlistSeats || oldMatch.price !== override.price;
+
+            if (isChanged) {
+                await syncOverrideToAvailability(updated.number, override);
+            }
+        }
+
+        // b) Handle Deleted Overrides
+        const deletedOverrides = oldOverrides.filter(old => 
+            !newOverrides.some(nw => nw.date === old.date && nw.classType === old.classType)
+        );
+
+        for (let deleted of deletedOverrides) {
+            await removeOverrideFromAvailability(updated.number, deleted);
+        }
+
+        // c) NEW: If Global Baseline changed, we might need to notify or refresh live data
+        // For now, we rely on the search logic falling back to global if no override exists.
+        // We've already ensured removals from Availability happen above.
+
+
         res.json({ id: updated._id, ...updated.toObject() });
     } catch (error) {
+        console.error('updateTrain error:', error);
         res.status(500).json({ error: 'Failed' });
     }
 };
+
+// Helper to sync specific override to Availability collection
+async function syncOverrideToAvailability(trainNumber, override) {
+    try {
+        let status = 'REGRET', count = 0, text = 'REGRET', color = 'text-red-600 dark:text-red-400', bg = 'bg-red-100 dark:bg-red-900/30';
+        
+        if (override.availableSeats > 0) {
+            status = 'AVL'; count = override.availableSeats; text = `AVL ${count}`; color = 'text-green-600 dark:text-green-400'; bg = 'bg-green-100 dark:bg-green-900/30';
+        } else if (override.waitlistSeats > 0) {
+            status = 'WL'; count = override.waitlistSeats; text = `WL ${count}`; color = 'text-yellow-700 dark:text-yellow-400'; bg = 'bg-yellow-100 dark:bg-yellow-900/30';
+        }
+
+        let availDoc = await Availability.findOne({ trainNumber, date: override.date });
+        if (!availDoc) {
+            availDoc = new Availability({ trainNumber, date: override.date, classes: {} });
+        }
+
+        if (availDoc.classes instanceof Map) {
+            availDoc.classes.set(override.classType, { status, count, text, color, bg });
+        } else {
+            availDoc.classes = availDoc.classes || {};
+            availDoc.classes[override.classType] = { status, count, text, color, bg };
+            availDoc.markModified('classes');
+        }
+
+        await availDoc.save();
+        console.log(`Synced override to Availability for ${trainNumber} on ${override.date}`);
+    } catch (e) {
+        console.error('Sync override error:', e);
+    }
+}
+
+// Helper to remove specific override from Availability collection
+async function removeOverrideFromAvailability(trainNumber, deleted) {
+    try {
+        let availDoc = await Availability.findOne({ trainNumber, date: deleted.date });
+        if (availDoc) {
+            if (availDoc.classes instanceof Map) {
+                availDoc.classes.delete(deleted.classType);
+            } else if (availDoc.classes) {
+                delete availDoc.classes[deleted.classType];
+                availDoc.markModified('classes');
+            }
+
+            // If no classes left, we can delete the doc, otherwise save
+            const classCount = availDoc.classes instanceof Map ? availDoc.classes.size : Object.keys(availDoc.classes || {}).length;
+            if (classCount === 0) {
+                await Availability.findByIdAndDelete(availDoc._id);
+                console.log(`Deleted empty Availability doc for ${trainNumber} on ${deleted.date}`);
+            } else {
+                await availDoc.save();
+                console.log(`Removed class ${deleted.classType} from Availability for ${trainNumber} on ${deleted.date}`);
+            }
+        }
+    } catch (e) {
+        console.error('Remove override error:', e);
+    }
+}
 
 exports.deleteTrain = async (req, res) => {
     try {
