@@ -158,21 +158,21 @@ exports.searchTrains = async (req, res) => {
             const nq = normalize(query);
             const nr = normalize(resolved);
 
-            // 1. Try Exact Match First
+            // 1. Try Exact Match First (Name or Code)
             let idx = schedule.findIndex(s => {
                 if (!s || !s.station) return false;
                 const ns = normalize(s.station);
-                return ns === nq || ns === nr;
+                const nc = normalize(s.code || '');
+                return ns === nq || ns === nr || nc === nq || nc === nr;
             });
 
-            // 2. Try Substring Match
+            // 2. Try Substring Match - ONLY if exact match fails
             if (idx === -1) {
                 idx = schedule.findIndex(s => {
                     const ns = normalize(s.station);
+                    // Match "Mumbai Central" to "Mumbai" but avoid "Pune" to "Mumbai"
                     return (nq.length >= 3 && ns.includes(nq)) ||
-                        (nr.length >= 3 && ns.includes(nr)) ||
-                        (nq.length >= 3 && nq.includes(ns)) ||
-                        (nr.length >= 3 && nr.includes(ns));
+                           (nr.length >= 3 && ns.includes(nr));
                 });
             }
             return idx;
@@ -398,91 +398,147 @@ exports.searchTrains = async (req, res) => {
 };
 
 // Helper to create a standardized Leg object
-const createLeg = (train, startIdx, endIdx, searchDate, availMap) => {
-    const startStop = train.schedule[startIdx];
-    const endStop = train.schedule[endIdx];
+// Helper: Centralized Price Calculation Logic
+const calculatePrice = (train, cls, dist, totalDist, isFullJourney, searchDate) => {
+    let dateToUse = searchDate || new Date().toISOString().split('T')[0];
+    if (dateToUse.includes('T')) dateToUse = dateToUse.split('T')[0];
 
-    // Distance
-    const dist = Math.abs(endStop.distanceFromStart - startStop.distanceFromStart);
+    const targetCls = (cls || 'SL').trim().toUpperCase();
+    let rawPrice = 0;
+    let isOverride = false;
 
-    // Price Calculation Helper
-    // Refined Base Rates (₹/km) for realistic pricing
-    const RATE_PER_KM = {
-        '2S': 0.45, 'SL': 0.65, 'CC': 1.50, '3A': 1.40, '2A': 2.00, '1A': 3.20, 'EC': 2.80
-    };
+    const RATE_PER_KM = { '2S': 0.45, 'SL': 0.65, 'CC': 1.50, '3A': 1.40, '2A': 2.00, '1A': 3.20, 'EC': 2.80 };
+    const BASE_FARE = { '2S': 60, 'SL': 100, 'CC': 250, '3A': 350, '2A': 550, '1A': 900, 'EC': 750 };
+    const CLASS_MULTIPLIERS = { '2S': 0.6, 'SL': 1.0, 'CC': 2.2, '3A': 2.1, '2A': 3.2, '1A': 5.5, 'EC': 4.8 };
+    const multiplier = CLASS_MULTIPLIERS[targetCls] || 1.0;
 
-    // Base Fares (Fixed) - Reduced slightly to prevent overpricing on short distances
-    const BASE_FARE = {
-        '2S': 60, 'SL': 100, 'CC': 250, '3A': 350, '2A': 550, '1A': 900, 'EC': 750
-    };
+    // Relative Multiplier Logic: 
+    // Determine the reference class that the 'basePrice' corresponds to.
+    let activeClasses = [];
+    if (Array.isArray(train.classes)) {
+        activeClasses = train.classes.map(c => (c || '').toString().trim().toUpperCase());
+    } else if (typeof train.classes === 'string') {
+        activeClasses = train.classes.split(',').map(c => c.trim().toUpperCase());
+    }
+    
+    // Selection Priority: SL > 3A > CC > First Available
+    let referenceClass = 'SL';
+    if (activeClasses.includes('SL')) {
+        referenceClass = 'SL';
+    } else if (activeClasses.includes('3A')) {
+        referenceClass = '3A';
+    } else if (activeClasses.includes('CC')) {
+        referenceClass = 'CC';
+    } else if (activeClasses.length > 0) {
+        referenceClass = activeClasses[0];
+    }
+    
+    const refMultiplier = CLASS_MULTIPLIERS[referenceClass] || 1.0;
+    const relativeMultiplier = multiplier / refMultiplier;
 
-    const getPrice = (cls) => {
-        const dateToUse = searchDate || new Date().toISOString().split('T')[0];
-        if (train.overrides && train.overrides.length > 0) {
-             const override = train.overrides.find(o => o.date === dateToUse && o.classType === cls);
-             if (override && override.price != null && override.price > 0) {
-                 return override.price;
-             }
+    if (train.overrides && train.overrides.length > 0) {
+        const override = train.overrides.find(o => {
+            const oDate = o.date ? (o.date.includes('T') ? o.date.split('T')[0] : o.date) : '';
+            const oClass = (o.classType || '').trim().toUpperCase();
+            return oDate === dateToUse && oClass === targetCls;
+        });
+
+        if (override && override.price != null && override.price > 0) {
+            rawPrice = isFullJourney ? override.price : (override.price * dist) / (totalDist || 1);
+            isOverride = true;
         }
+    }
 
-        let rate = RATE_PER_KM[cls] || 0.65;
-        let base = BASE_FARE[cls] || 100;
+    if (!isOverride && train.basePrice && train.basePrice > 0) {
+        const basePriceNum = Number(train.basePrice);
+        const fullPrice = basePriceNum * relativeMultiplier;
+        rawPrice = isFullJourney ? fullPrice : (fullPrice * dist) / (totalDist || 1);
+        isOverride = true;
+    }
 
-        // Train Type Multiplier
+    if (!isOverride) {
+        let rate = RATE_PER_KM[targetCls] || 0.65;
+        let base = BASE_FARE[targetCls] || 100;
+        rawPrice = base + (dist * rate);
+
         let typeMult = 1.0;
         const tt = train.type || '';
         if (tt.includes('Rajdhani') || tt.includes('Duronto') || tt.includes('Vande')) {
-            typeMult = 1.15; // Reduced from 1.3 to make it more realistic
-            if (cls === '1A' || cls === 'EC') typeMult = 1.2;
+            typeMult = (targetCls === '1A' || targetCls === 'EC') ? 1.2 : 1.15;
         } else if (tt.includes('Shatabdi')) {
             typeMult = 1.10;
         } else if (tt === 'Superfast') {
             typeMult = 1.05;
         }
+        rawPrice *= typeMult;
 
-        // Formula: (Base + (Dist * Rate)) * Multiplier
-        let rawPrice = (base + (dist * rate)) * typeMult;
-
-        // --- ENHANCED UNIQUE PRICE ADJUSTMENT ---
-        // Requirement: "Every coach in every train should have a unique fare no repeated prices anywhere"
-
-        // 1. Base Jitter from Train Number hash (keeps it deterministic per train)
         let seed = 0;
-        const hashStr = (train.number || '0000') + cls;
+        const hashStr = (train.number || '0000') + targetCls;
         for (let i = 0; i < hashStr.length; i++) {
             seed = ((seed << 5) - seed) + hashStr.charCodeAt(i);
             seed |= 0;
         }
-
-        // 2. Extra jitter from Train Number numeric value to spread out clusters
         const trainNumInt = parseInt((train.number || '0').replace(/\D/g, '')) || 0;
-        const extraJitter = (trainNumInt % 17) * 4; // Spread out by multiples of 4
+        rawPrice += ((Math.abs(seed) % 75) - 37) + ((trainNumInt % 17) * 4);
+    }
 
-        // Combine jitters
-        const combinedJitter = ((Math.abs(seed) % 75) - 37) + extraJitter;
+    let finalPrice = Math.floor(rawPrice);
+    if (!isOverride) {
+        const trainNumInt = parseInt((train.number || '0').replace(/\D/g, '')) || 0;
+        const targetLast = (trainNumInt + (targetCls.charCodeAt(0) || 0)) % 10;
+        finalPrice += (targetLast - (finalPrice % 10));
+    }
 
-        rawPrice += combinedJitter;
+    return Math.max(finalPrice, BASE_FARE[targetCls] || 60);
+};
 
-        // 3. Final collision avoidance: Force last digit to match a train-specific target
-        // This distributes prices across all 10 possible endings based on train+class.
-        let finalPrice = Math.floor(rawPrice);
-        const lastDigitTarget = (trainNumInt + (cls.charCodeAt(0) || 0)) % 10;
+// Helper: Standard availability matching
+const getMatchAvailability = (train, cls, dateToUse, availMap) => {
+    const targetCls = (cls || 'SL').trim().toUpperCase();
 
-        const currentLastDigit = finalPrice % 10;
-        let diff = lastDigitTarget - currentLastDigit;
-        finalPrice += diff;
+    if (availMap && availMap.has(train.number)) {
+        const doc = availMap.get(train.number);
+        let statusObj = (doc.classes instanceof Map) ? doc.classes.get(targetCls) : (doc.classes || {})[targetCls];
+        if (statusObj) return statusObj;
+    }
 
-        // Safety check
-        if (finalPrice < base) finalPrice = base + lastDigitTarget;
+    if (train.overrides && train.overrides.length > 0) {
+        const override = train.overrides.find(o => {
+            const oDate = o.date ? (o.date.includes('T') ? o.date.split('T')[0] : o.date) : '';
+            return oDate === dateToUse && (o.classType || '').trim().toUpperCase() === targetCls;
+        });
 
-        return finalPrice;
-        // Rounding to nearest 1 is safer for uniqueness.
-        return Math.floor(rawPrice);
-    };
+        if (override) {
+            if (override.availableSeats > 0) return { status: 'AVL', count: override.availableSeats, text: `AVL ${override.availableSeats}`, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30' };
+            if (override.waitlistSeats > 0) return { status: 'WL', count: override.waitlistSeats, text: `WL ${override.waitlistSeats}`, color: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-100 dark:bg-yellow-900/30' };
+            if (override.availableSeats === 0 || override.waitlistSeats === 0) return { status: 'REGRET', count: 0, text: 'REGRET', color: 'text-red-600 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-900/30' };
+        }
+    }
 
-    // --- LIVE STATUS SIMULATION (Shared Logic) ---
+    if (train.availableSeats > 0) return { status: 'AVL', count: train.availableSeats, text: `AVL ${train.availableSeats}`, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30' };
+    return exports.generateAvailability(train.number, dateToUse, targetCls);
+};
+
+const createLeg = (train, startIdx, endIdx, searchDate, availMap) => {
+    const startStop = train.schedule[startIdx];
+    const endStop = train.schedule[endIdx];
+    const dist = Math.abs(endStop.distanceFromStart - startStop.distanceFromStart);
+    const dateToUse = searchDate || new Date().toISOString().split('T')[0];
+    const totalSchedule = train.schedule || [];
+    const totalDist = (totalSchedule.length > 0) ? (totalSchedule[totalSchedule.length - 1].distanceFromStart || 1) : 1;
+    const isFullJourney = (startIdx === 0 && endIdx === totalSchedule.length - 1);
+
+    const price = calculatePrice(train, 'SL', dist, totalDist, isFullJourney, dateToUse);
+
+
+
+    // Apply Check for overrides (Train No and Times)
+    let trainNumberToUse = train.number;
+    let depTimeToUse = startStop.departure || startStop.arrival || '00:00';
+    let arrTimeToUse = endStop.arrival || endStop.departure || '00:00';
+
+    // --- LIVE STATUS SIMULATION ---
     const now = new Date();
-    const currentMins = now.getHours() * 60 + now.getMinutes();
     const seed = parseInt(train.number || '0') + now.getDate();
     const delay = seed % 15; // Simulated 0-15 mins delay
 
@@ -495,110 +551,45 @@ const createLeg = (train, startIdx, endIdx, searchDate, availMap) => {
         return `${newH}:${newM}`;
     };
 
-    const displayPrice = getPrice('SL');
-
-
-    // Availability Helper
-    const dateToUse = searchDate || new Date().toISOString().split('T')[0];
-
-    const getRealAvailability = (cls) => {
-        // Priority 1: Check Live DB map (Bookings/Overrides combined LIVE state)
-        if (availMap && availMap.has(train.number)) {
-            const doc = availMap.get(train.number);
-            let statusObj = null;
-
-            // Handle Map vs Object structure in Doc
-            if (doc.classes instanceof Map) {
-                statusObj = doc.classes.get(cls);
-            } else if (doc.classes && typeof doc.classes === 'object') {
-                statusObj = doc.classes[cls];
-            }
-
-            if (statusObj) {
-                return statusObj; // Return the REAL DB value
-            }
+    if (train.overrides && train.overrides.length > 0) {
+        // Find if ANY override for this date has train-wide settings
+        const trainWideOverride = train.overrides.find(o => {
+            const oDate = o.date ? (o.date.includes('T') ? o.date.split('T')[0] : o.date) : '';
+            return oDate === dateToUse && (o.trainNo || o.departureTime || o.arrivalTime);
+        });
+        if (trainWideOverride) {
+            if (trainWideOverride.trainNo) trainNumberToUse = trainWideOverride.trainNo;
+            if (trainWideOverride.departureTime && startIdx === 0) depTimeToUse = trainWideOverride.departureTime;
+            if (trainWideOverride.arrivalTime && endIdx === train.schedule.length - 1) arrTimeToUse = trainWideOverride.arrivalTime;
         }
+    }
 
-        // Priority 2: --- ADVANCED PER-CLASS PER-DATE OVERRIDE ---
-        if (train.overrides && train.overrides.length > 0) {
-             const override = train.overrides.find(o => o.date === dateToUse && o.classType === cls);
-             if (override) {
-                 if (override.availableSeats != null && override.availableSeats > 0) {
-                     return { status: 'AVL', count: override.availableSeats, text: `AVL ${override.availableSeats}`, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30' };
-                 } else if (override.waitlistSeats != null && override.waitlistSeats > 0) {
-                     return { status: 'WL', count: override.waitlistSeats, text: `WL ${override.waitlistSeats}`, color: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-100 dark:bg-yellow-900/30' };
-                 } else if (override.availableSeats === 0 || override.waitlistSeats === 0) {
-                     return { status: 'REGRET', count: 0, text: 'REGRET', color: 'text-red-600 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-900/30' };
-                 }
-             }
-        }
-
-        // Priority 3: --- LEGACY GENERIC OVERRIDE (Fallback) ---
-        if (train.availableSeats != null || train.waitlistSeats != null) {
-            if (train.availableSeats > 0) {
-                return {
-                    status: 'AVL',
-                    count: train.availableSeats,
-                    text: `AVL ${train.availableSeats}`,
-                    color: 'text-green-600 dark:text-green-400',
-                    bg: 'bg-green-100 dark:bg-green-900/30'
-                };
-            } else if (train.waitlistSeats > 0) {
-                return {
-                    status: 'WL',
-                    count: train.waitlistSeats,
-                    text: `WL ${train.waitlistSeats}`,
-                    color: 'text-yellow-700 dark:text-yellow-400',
-                    bg: 'bg-yellow-100 dark:bg-yellow-900/30'
-                };
-            } else {
-                return {
-                    status: 'REGRET',
-                    count: 0,
-                    text: 'REGRET',
-                    color: 'text-red-600 dark:text-red-400',
-                    bg: 'bg-red-100 dark:bg-red-900/30'
-                };
-            }
-        }
-        // -----------------------------
-
-        // Priority 4. Fallback to Generator
-        return exports.generateAvailability(train.number, dateToUse, cls);
-    };
-
-
-    // Duration
-    const depTime = startStop.departure || startStop.arrival || '00:00';
-    const arrTime = endStop.arrival || endStop.departure || '00:00';
-
+    // Recalculate duration if times changed
     let mins = 0;
-    const [h1, m1] = depTime.split(':').map(Number);
-    const [h2, m2] = arrTime.split(':').map(Number);
+    const [h1, m1] = depTimeToUse.split(':').map(Number);
+    const [h2, m2] = arrTimeToUse.split(':').map(Number);
     mins = (h2 * 60 + m2) - (h1 * 60 + m1);
     if (mins < 0) mins += 24 * 60;
-
     const durStr = `${Math.floor(mins / 60)}h ${mins % 60}m`;
 
     return {
         trainName: train.name,
-        trainNumber: train.number,
+        trainNumber: trainNumberToUse,
         from: startStop.station,
         to: endStop.station,
-        departure: depTime,
-        arrival: arrTime,
+        departure: depTimeToUse,
+        arrival: arrTimeToUse,
         duration: durStr,
         distance: dist,
-        price: displayPrice,
+        price: price,
         delay: delay,
-        estimatedDeparture: addMinutes(depTime, delay),
-        estimatedArrival: addMinutes(arrTime, delay),
+        estimatedDeparture: addMinutes(depTimeToUse, delay),
+        estimatedArrival: addMinutes(arrTimeToUse, delay),
         liveStatus: delay > 0 ? `Running late by ${delay} mins` : 'On Time',
         classes: (train.classes || []).map(c => ({
-
             type: c,
-            price: getPrice(c),
-            availability: getRealAvailability(c)
+            price: calculatePrice(train, c, dist, totalDist, isFullJourney, dateToUse),
+            availability: getMatchAvailability(train, c, dateToUse, availMap)
         })) // Populate classes with REAL availability or fallback
     };
 };
@@ -606,11 +597,21 @@ const createLeg = (train, startIdx, endIdx, searchDate, availMap) => {
 exports.simulateOverride = async (req, res) => {
     try {
         const { id } = req.params;
-        const { date, classType } = req.query;
+        const { date, classType, tempBasePrice, tempClasses } = req.query;
         if (!id || !date || !classType) return res.status(400).json({ error: 'Missing parameters' });
 
         const train = await Train.findById(id);
         if (!train) return res.status(404).json({ error: 'Train not found' });
+
+        // Apply temporary overrides for simulation preview if provided
+        if (tempBasePrice) {
+            train.basePrice = Number(tempBasePrice);
+        }
+        if (tempClasses) {
+            // Note: Mongoose might treat this as a string or array depending on how it's used next.
+            // We split it to ensure calculatePrice sees it as an array of classes.
+            train.classes = tempClasses.split(',').map(c => c.trim());
+        }
 
         let dist = 500;
         if (train.schedule && train.schedule.length >= 2) {
@@ -622,46 +623,20 @@ exports.simulateOverride = async (req, res) => {
         const RATE_PER_KM = { '2S': 0.45, 'SL': 0.65, 'CC': 1.50, '3A': 1.40, '2A': 2.00, '1A': 3.20, 'EC': 2.80 };
         const BASE_FARE = { '2S': 60, 'SL': 100, 'CC': 250, '3A': 350, '2A': 550, '1A': 900, 'EC': 750 };
 
-        const getPrice = (cls) => {
-            let rate = RATE_PER_KM[cls] || 0.65;
-            let base = BASE_FARE[cls] || 100;
-            let typeMult = 1.0;
-            if (train.type && (train.type.includes('Rajdhani') || train.type.includes('Duronto') || train.type.includes('Vande'))) {
-                typeMult = 1.15;
-                if (cls === '1A' || cls === 'EC') typeMult = 1.2;
-            } else if (train.type && train.type.includes('Shatabdi')) {
-                typeMult = 1.10;
-            } else if (train.type === 'Superfast') {
-                typeMult = 1.05;
-            }
-            let rawPrice = (base + (dist * rate)) * typeMult;
-
-            let seed = 0;
-            const hashStr = (train.number || '0000') + cls;
-            for (let i = 0; i < hashStr.length; i++) {
-                seed = ((seed << 5) - seed) + hashStr.charCodeAt(i);
-                seed |= 0;
-            }
-            const trainNumInt = parseInt((train.number || '0').replace(/\D/g, '')) || 0;
-            const extraJitter = (trainNumInt % 17) * 4;
-            const combinedJitter = ((Math.abs(seed) % 75) - 37) + extraJitter;
-            rawPrice += combinedJitter;
-
-            let finalPrice = Math.floor(rawPrice);
-            const lastDigitTarget = (trainNumInt + (cls.charCodeAt(0) || 0)) % 10;
-            const currentLastDigit = finalPrice % 10;
-            let diff = lastDigitTarget - currentLastDigit;
-            finalPrice += diff;
-            if (finalPrice < base) finalPrice = base + lastDigitTarget;
-            return finalPrice;
-        };
-
-        const generatedAvailability = exports.generateAvailability(train.number, date, classType);
-        const generatedPrice = getPrice(classType);
+        // Unified Price and Availability check
+        const totalSchedule = train.schedule || [];
+        const totalDist = (totalSchedule.length > 0) ? (totalSchedule[totalSchedule.length - 1].distanceFromStart || 1) : 1;
+        
+        const generatedAvailability = getMatchAvailability(train, classType, date, null);
+        const generatedPrice = calculatePrice(train, classType, dist, totalDist, true, date); // Admin simulation assumes full distance for the context they are viewing
 
         res.json({
             availability: generatedAvailability,
-            price: generatedPrice
+            price: generatedPrice,
+
+            trainNumber: train.number,
+            departureTime: (train.schedule && train.schedule.length > 0 && train.schedule[0].departure) ? train.schedule[0].departure : (train.departureTime || '08:00'),
+            arrivalTime: (train.schedule && train.schedule.length > 0 && train.schedule[train.schedule.length - 1].arrival) ? train.schedule[train.schedule.length - 1].arrival : (train.arrivalTime || '20:00')
         });
     } catch (e) {
         console.error('simulateOverride error:', e);
@@ -704,7 +679,7 @@ exports.createTrain = async (req, res) => {
         res.status(201).json({ id: newTrain._id, ...newTrain.toObject() });
     } catch (error) {
         console.error('API Error in createTrain:', error);
-        res.status(500).json({ error: 'Failed' });
+        res.status(500).json({ error: error.message || 'Failed to create train' });
     }
 };
 
@@ -760,7 +735,7 @@ exports.updateTrain = async (req, res) => {
         res.json({ id: updated._id, ...updated.toObject() });
     } catch (error) {
         console.error('updateTrain error:', error);
-        res.status(500).json({ error: 'Failed' });
+        res.status(500).json({ error: error.message || 'Failed' });
     }
 };
 

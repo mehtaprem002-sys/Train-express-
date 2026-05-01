@@ -23,6 +23,12 @@ const stationSchema = new mongoose.Schema({
     region: {
         type: String,
         trim: true
+    },
+    latitude: {
+        type: Number
+    },
+    longitude: {
+        type: Number
     }
 }, { timestamps: true });
 

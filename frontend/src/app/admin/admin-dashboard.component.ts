@@ -13,7 +13,41 @@ import { AdminBookingsComponent } from './admin-bookings.component';
     selector: 'app-admin-dashboard',
     standalone: true,
     imports: [CommonModule, AdminTrainsComponent, AdminStationsComponent, AdminUsersComponent, AdminContactsComponent, AdminBookingsComponent],
-    templateUrl: './admin-dashboard.component.html'
+    templateUrl: './admin-dashboard.component.html',
+    styles: [`
+        .stat-card {
+            position: relative;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            --glow-color: rgba(99, 102, 241, 0.08);
+        }
+        .stat-card:hover {
+            transform: translateY(-6px);
+        }
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, var(--glow-color) 0%, transparent 60%);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .stat-card:hover::before {
+            opacity: 1;
+        }
+        .icon-glow {
+            transition: all 0.3s ease;
+        }
+        .stat-card:hover .icon-glow {
+            transform: scale(1.1);
+            filter: drop-shadow(0 0 8px var(--glow-color-strong, rgba(99, 102, 241, 0.4)));
+        }
+    `]
 })
 export class AdminDashboardComponent implements OnInit {
     activeTab: 'overview' | 'trains' | 'stations' | 'users' | 'bookings' | 'messages' = 'overview';
@@ -104,16 +138,18 @@ export class AdminDashboardComponent implements OnInit {
 
                 this.bookingsCount.set(activeBookings.length);
                 this.revenueTotal.set(revenue);
-                this.allBookings.set(bookings.map(b => ({
+                
+                // Map bookings to ensure travelDate is always populated
+                const mappedBookings = bookings.map(b => ({
                     ...b,
-                    travelDate: b.date || b.travelDate
-                })));
-
-                this.recentBookings.set(activeBookings.slice(0, 5).map(b => ({
-                    ...b,
+                    travelDate: b.date || b.travelDate || b.train?.date,
                     avatar: `https://ui-avatars.com/api/?name=${b.user?.name || 'Guest'}&background=random`,
                     memberType: b.user?.role === 'ADMIN' ? 'Premium Member' : 'Standard User'
-                })));
+                }));
+
+                this.allBookings.set(mappedBookings);
+                this.recentBookings.set(mappedBookings.filter(b => b.status !== 'Cancelled').slice(0, 5));
+                
                 this.cdr.detectChanges();
             },
             error: (err) => {
@@ -191,6 +227,61 @@ export class AdminDashboardComponent implements OnInit {
     setActiveTab(tab: any) {
         this.activeTab = tab;
         this.cdr.detectChanges();
+    }
+
+    exportReport() {
+        const bookings = this.allBookings();
+        if (bookings.length === 0) {
+            this.notificationService.showError('No bookings available to export.');
+            return;
+        }
+
+        // CSV Headers
+        const headers = ['PNR', 'Customer Name', 'Customer Email', 'Train Number', 'Train Name', 'Class', 'Source', 'Destination', 'Status', 'Amount (INR)', 'Travel Date'];
+        
+        // CSV Rows
+        const rows = bookings.map(b => [
+            b.pnr || 'N/A',
+            b.user?.name || 'Guest',
+            b.user?.email || 'N/A',
+            b.train?.number || 'N/A',
+            b.train?.name || 'N/A',
+            b.class?.type || b.selectedClass?.type || 'SL',
+            b.train?.from || 'N/A',
+            b.train?.to || b.to || 'N/A',
+            b.status || 'Confirmed',
+            b.paymentDetails?.amount || 0,
+            this.formatDate(b.travelDate || b.date || b.train?.date || b.createdAt)
+        ]);
+
+        // Build CSV Content
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.map(value => `"${value}"`).join(','))
+        ].join('\n');
+
+        // Create and trigger download
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        
+        const timestamp = new Date().toISOString().split('T')[0];
+        link.setAttribute('href', url);
+        link.setAttribute('download', `train_express_report_${timestamp}.csv`);
+        link.style.visibility = 'hidden';
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        this.notificationService.showSuccess('Report exported successfully!');
+    }
+
+    private formatDate(dateInput: any): string {
+        if (!dateInput) return 'N/A';
+        const d = new Date(dateInput);
+        if (isNaN(d.getTime())) return 'N/A';
+        return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
     }
 
     private handleAuthError(err: any) {

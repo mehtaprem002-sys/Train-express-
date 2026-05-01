@@ -133,7 +133,7 @@ export class AdminBookingsComponent implements OnInit {
             next: (data) => {
                 this.bookings = data.map(b => ({
                     ...b,
-                    travelDate: b.date || b.travelDate
+                    travelDate: b.date || b.travelDate || b.train?.date
                 }));
                 this.cdr.detectChanges();
             },

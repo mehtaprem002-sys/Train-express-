@@ -165,9 +165,9 @@ import { RouterModule } from '@angular/router';
         <section class="py-24 bg-white border-t border-neutral-100 relative overflow-hidden">
             <div class="max-w-4xl mx-auto px-6 relative z-10">
                 <div class="text-center mb-16 reveal">
-                    <span class="text-orange-600 font-bold tracking-widest text-xs uppercase mb-3 block">Indian Railways Guide</span>
+                    <span class="text-orange-600 font-bold tracking-widest text-xs uppercase mb-3 block">Train Express Smart Guide</span>
                     <h2 class="text-3xl md:text-5xl font-serif text-neutral-900 mb-6">Frequently Asked Questions</h2>
-                    <p class="text-neutral-500">Everything you need to know about Tatkal, RAC, and IRCTC rules.</p>
+                    <p class="text-neutral-500">Everything you need to know about our smart features and booking rules.</p>
                 </div>
 
                 <div class="space-y-4 reveal" style="transition-delay: 200ms;">
@@ -213,8 +213,8 @@ export class AboutUsComponent implements AfterViewInit {
 
     faqs = [
         {
-            question: "What are the timings for Tatkal booking?",
-            answer: "Tatkal booking opens at 10:00 AM for AC classes (1A, 2A, 3A, CC, EC) and at 11:00 AM for Non-AC classes (SL, FC, 2S). Bookings open one day in advance of the actual date of journey."
+            question: "How can I track my train in real-time?",
+            answer: "Our platform provides precise GPS-enabled live tracking for all journeys. Simply visit your dashboard and click on your booking to see your train's exact location, current delay, and estimated time of arrival."
         },
         {
             question: "How does RAC (Reservation Against Cancellation) work?",

@@ -1,21 +1,39 @@
 const mongoose = require('mongoose');
 const Train = require('./models/Train');
 
-const check = async () => {
+async function checkOverrides() {
     try {
         await mongoose.connect('mongodb://localhost:27017/train-express');
-        const trains = await Train.find({});
-        console.log(`Total Trains: ${trains.length}`);
-        const trainsWithNoClasses = trains.filter(t => !t.classes || t.classes.length === 0);
-        console.log(`Trains with no classes: ${trainsWithNoClasses.length}`);
-        if (trainsWithNoClasses.length > 0) {
-            console.log('Sample trains with no classes:');
-            trainsWithNoClasses.slice(0, 5).forEach(t => console.log(`- ${t.number}: ${t.name}`));
+        const train = await Train.findOne({ number: '12216' });
+        
+        if (!train) {
+            console.log("Train 12216 not found");
+            return;
         }
+
+        console.log(`Train: ${train.name} (${train.number})`);
+        console.log(`Global Base Price: ${train.basePrice}`);
+        console.log(`Overrides Count: ${train.overrides.length}`);
+        
+        const targetDate = '2026-04-18';
+        const override = train.overrides.find(o => {
+            const oDate = o.date ? (o.date.includes('T') ? o.date.split('T')[0] : o.date) : '';
+            return oDate === targetDate;
+        });
+
+        if (override) {
+            console.log(`Found Override for ${targetDate}:`);
+            console.log(JSON.stringify(override, null, 2));
+        } else {
+            console.log(`No override found for ${targetDate}`);
+            console.log(`Available dates in overrides:`, train.overrides.map(o => o.date));
+        }
+
     } catch (e) {
         console.error(e);
     } finally {
-        process.exit(0);
+        mongoose.disconnect();
     }
-};
-check();
+}
+
+checkOverrides();

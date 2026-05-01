@@ -63,6 +63,14 @@ exports.createBooking = async (req, res) => {
                     }
                 }
 
+                if (!initialStatus && trainObj) {
+                    if (trainObj.availableSeats != null && trainObj.availableSeats > 0) {
+                        initialStatus = { status: 'AVL', count: trainObj.availableSeats, text: `AVL ${trainObj.availableSeats}`, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30' };
+                    } else if (trainObj.waitlistSeats != null && trainObj.waitlistSeats > 0) {
+                        initialStatus = { status: 'WL', count: trainObj.waitlistSeats, text: `WL ${trainObj.waitlistSeats}`, color: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-100 dark:bg-yellow-900/30' };
+                    }
+                }
+
                 if (!initialStatus) {
                     initialStatus = generateAvailability(trainNumber, travelDate, classType);
                 }
@@ -82,6 +90,7 @@ exports.createBooking = async (req, res) => {
                 let classStatus = null;
                 const Train = require('../models/Train');
                 const trainObj = await Train.findOne({ number: trainNumber });
+                
                 if (trainObj && trainObj.overrides) {
                     const override = trainObj.overrides.find(o => o.date === travelDate && o.classType === classType);
                     if (override) {
@@ -90,6 +99,15 @@ exports.createBooking = async (req, res) => {
                         else if (override.availableSeats === 0 || override.waitlistSeats === 0) classStatus = { status: 'REGRET', count: 0, text: 'REGRET', color: 'text-red-600 dark:text-red-400', bg: 'bg-red-100 dark:bg-red-900/30' };
                     }
                 }
+
+                if (!classStatus && trainObj) {
+                    if (trainObj.availableSeats != null && trainObj.availableSeats > 0) {
+                        classStatus = { status: 'AVL', count: trainObj.availableSeats, text: `AVL ${trainObj.availableSeats}`, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30' };
+                    } else if (trainObj.waitlistSeats != null && trainObj.waitlistSeats > 0) {
+                        classStatus = { status: 'WL', count: trainObj.waitlistSeats, text: `WL ${trainObj.waitlistSeats}`, color: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-100 dark:bg-yellow-900/30' };
+                    }
+                }
+
                 if (!classStatus) classStatus = generateAvailability(trainNumber, travelDate, classType);
                 classesMap[classType] = classStatus;
             }
@@ -372,60 +390,58 @@ exports.cancelBooking = async (req, res) => {
         const travelDate = booking.date || booking.train?.date; 
         console.log(`[DEBUG] Cancellation sync attempt for train=${trainNumber}, date=${travelDate}`);
         
-        // Robust class extraction: Handle both object { type: 'SL' } and string 'SL'
         const rawClass = booking.class;
         const classType = (rawClass && typeof rawClass === 'object' && rawClass.type) ? rawClass.type : rawClass;
-
         const passengerCount = (booking.passengers || []).length;
 
         if (trainNumber && travelDate && classType) {
             let availDoc = await Availability.findOne({ trainNumber, date: travelDate });
 
             if (!availDoc) {
-                console.log(`[DEBUG] Availability doc missing for cancellation. Creating new one for ${trainNumber} on ${travelDate}`);
+                console.log(`[DEBUG] Availability doc missing for cancellation. Creating new one.`);
                 availDoc = new Availability({ trainNumber, date: travelDate, classes: {} });
             }
 
-            // Handle Map vs Object
-            let classesMap = {};
-            if (availDoc.classes instanceof Map) {
-                classesMap = Object.fromEntries(availDoc.classes);
-            } else {
-                classesMap = availDoc.classes || {};
-            }
-
+            let classesMap = availDoc.classes instanceof Map ? Object.fromEntries(availDoc.classes) : (availDoc.classes || {});
             let currentStatus = classesMap[classType];
 
             if (!currentStatus) {
-                console.log(`[DEBUG] Class entry ${classType} missing in Availability. Initializing from Train defaults.`);
-                // Fallback to a default state if missing, so we can at least increment from 0
                 currentStatus = { status: 'WL', count: 0, text: 'WL 0' };
             }
 
-            if (currentStatus) {
-                console.log(`[DEBUG] Current state for ${classType}: ${currentStatus.status} ${currentStatus.count}`);
-                if (currentStatus.status === 'AVL') {
-                    currentStatus.count += passengerCount;
-                    currentStatus.text = `AVL ${currentStatus.count}`;
-                } else if (currentStatus.status === 'WL') {
-                    // Determine effective count change: existing WL count - passengers cancelled
-                    let netWL = (currentStatus.count || 0) - passengerCount;
+            console.log(`[DEBUG] Current state for ${classType}: ${currentStatus.status} ${currentStatus.count}`);
+            
+            if (currentStatus.status === 'AVL') {
+                currentStatus.count += passengerCount;
+                currentStatus.text = `AVL ${currentStatus.count}`;
+                currentStatus.color = 'text-green-600 dark:text-green-400';
+                currentStatus.bg = 'bg-green-100 dark:bg-green-900/30';
+            } else if (currentStatus.status === 'WL') {
+                let netWL = (currentStatus.count || 0) - passengerCount;
 
-                    if (netWL < 0) {
-                        // If netWL is negative, it means we have cleared the waitlist 
-                        // and have extra seats available.
-                        currentStatus.status = 'AVL';
-                        currentStatus.count = Math.abs(netWL);
-                        currentStatus.text = `AVL ${currentStatus.count}`;
-                        currentStatus.color = 'text-green-600 dark:text-green-400';
-                        currentStatus.bg = 'bg-green-100 dark:bg-green-900/30';
-                        console.log(`[DEBUG] Transitioned from WL to AVL. New Count: ${currentStatus.count}`);
-                    } else {
-                    }
-                    await availDoc.save();
+                if (netWL < 0) {
+                    currentStatus.status = 'AVL';
+                    currentStatus.count = Math.abs(netWL);
+                    currentStatus.text = `AVL ${currentStatus.count}`;
+                    currentStatus.color = 'text-green-600 dark:text-green-400';
+                    currentStatus.bg = 'bg-green-100 dark:bg-green-900/30';
+                } else {
+                    currentStatus.count = netWL;
+                    currentStatus.text = `WL ${currentStatus.count}`;
+                    currentStatus.color = 'text-yellow-700 dark:text-yellow-400';
+                    currentStatus.bg = 'bg-yellow-100 dark:bg-yellow-900/30';
                 }
             }
+
+            if (availDoc.classes instanceof Map) {
+                availDoc.classes.set(classType, currentStatus);
+            } else {
+                availDoc.classes[classType] = currentStatus;
+                availDoc.markModified('classes');
+            }
+            await availDoc.save();
         }
+        // -----------------------------------
         // -----------------------------------
 
         // Calculate Refund

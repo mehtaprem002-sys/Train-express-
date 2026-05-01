@@ -33,7 +33,10 @@ const trainSchema = new mongoose.Schema({
         classType: String,
         availableSeats: { type: Number, default: null },
         waitlistSeats: { type: Number, default: null },
-        price: { type: Number, default: null }
+        price: { type: Number, default: null },
+        trainNo: { type: String, default: null },
+        departureTime: { type: String, default: null },
+        arrivalTime: { type: String, default: null }
     }]
 }, { timestamps: true });
 

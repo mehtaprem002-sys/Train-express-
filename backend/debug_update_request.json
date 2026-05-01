@@ -1,0 +1,71 @@
+{
+  "id": "6995c752780156b8fcc62140",
+  "_id": "6995c752780156b8fcc62140",
+  "trainNo": "12961",
+  "name": "Avantika Express",
+  "number": "12961",
+  "type": "Superfast",
+  "from": "Mumbai Central",
+  "to": "Indore Junction",
+  "from_code": "MMCT",
+  "to_code": "INDB",
+  "departureTime": "20:55",
+  "arrivalTime": "10:11",
+  "duration": "13h 16m",
+  "distance": 873,
+  "runsOn": [
+    "Mon",
+    "Tue",
+    "Wed",
+    "Thu",
+    "Fri",
+    "Sat",
+    "Sun"
+  ],
+  "classes": [
+    "SL",
+    "3A",
+    "2A",
+    "1A"
+  ],
+  "pantry": true,
+  "basePrice": 500,
+  "route": [
+    "MMCT",
+    "ST",
+    "BRC",
+    "UJN",
+    "INDB"
+  ],
+  "schedule": [
+    {
+      "station": "Mumbai Central",
+      "departure": "08:00",
+      "arrival": "08:00",
+      "distanceFromStart": 0,
+      "_id": "69e1bbd2dfd8cb655260a0d8"
+    },
+    {
+      "station": "Indore Junction",
+      "departure": "20:00",
+      "arrival": "20:00",
+      "distanceFromStart": 500,
+      "_id": "69e1bbd2dfd8cb655260a0d9"
+    }
+  ],
+  "__v": 0,
+  "createdAt": "2026-02-18T14:06:11.259Z",
+  "updatedAt": "2026-04-17T06:12:09.590Z",
+  "availableSeats": null,
+  "waitlistSeats": 50,
+  "overrides": [
+    {
+      "date": "2026-04-18",
+      "classType": "3A",
+      "availableSeats": 1,
+      "waitlistSeats": 0,
+      "price": 1092,
+      "_id": "69e1cf28b72dd5a43b6261d8"
+    }
+  ]
+}
